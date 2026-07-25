@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable, hardened security helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Validation helper for User Profile entity
+    function isValidUser(data) {
+      return data.uid is string &&
+             data.uid.size() <= 128 &&
+             data.fullName is string &&
+             data.fullName.size() <= 128 &&
+             data.email is string &&
+             data.email.size() <= 128 &&
+             data.coins is number &&
+             data.coins >= 0;
+    }
+
+    // Users Collection rules
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      
+      // Allow creation only if the user is authenticated, the IDs match, the email matches request, 
+      // and they are not trying to register as an admin or bypass ban states
+      allow create: if isOwner(userId) && 
+                      isValidId(userId) && 
+                      isValidUser(request.resource.data) &&
+                      request.resource.data.uid == userId &&
+                      request.resource.data.email == request.auth.token.email &&
+                      request.resource.data.isAdmin == false &&
+                      request.resource.data.isBanned == false;
+
+      // Allow updates only if they own the record, don't change their immutable email/uid,
+      // and do not modify administrative/privilege fields (isAdmin or isBanned)
+      allow update: if isOwner(userId) &&
+                      isValidId(userId) &&
+                      isValidUser(request.resource.data) &&
+                      request.resource.data.uid == resource.data.uid &&
+                      request.resource.data.email == resource.data.email &&
+                      request.resource.data.isAdmin == resource.data.isAdmin &&
+                      request.resource.data.isBanned == resource.data.isBanned;
+                      
+      allow delete: if false; // Users cannot delete their records via client SDK
+    }
+  }
+}

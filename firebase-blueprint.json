@@ -1,0 +1,38 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile, balance and stats for Reward Rush",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The Firebase Authentication UID" },
+        "fullName": { "type": "string", "description": "User full display name" },
+        "email": { "type": "string", "description": "User verified email" },
+        "mobile": { "type": "string", "description": "User mobile phone number" },
+        "profilePhoto": { "type": "string", "description": "URL to profile photo or default avatar ID" },
+        "coins": { "type": "number", "description": "Current balance of coins (equivalent to balance in UI)" },
+        "totalEarned": { "type": "number", "description": "Total amount of coins earned" },
+        "totalWithdrawn": { "type": "number", "description": "Total coins withdrawn successfully" },
+        "pendingWithdraw": { "type": "number", "description": "Total coins currently in pending withdrawal" },
+        "referralCode": { "type": "string", "description": "User unique referral code" },
+        "joinedAt": { "type": "string", "description": "ISO timestamp representing registration time" },
+        "isAdmin": { "type": "boolean", "description": "Whether the user is an admin" },
+        "isBanned": { "type": "boolean", "description": "Whether the user has been banned" },
+        "paymentDetails": { "type": "object", "description": "User registered payout or payment credentials" },
+        "notifications": { "type": "number", "description": "Unread notification count" },
+        "dailyStreak": { "type": "number", "description": "User current daily checkin streak count" },
+        "lastCheckIn": { "type": "string", "description": "ISO format string for last daily checkin date" },
+        "completedTasksCount": { "type": "number", "description": "Number of successfully extracted tasks" },
+        "spins": { "type": "number", "description": "Available spins on the lucky wheel" },
+        "history": { "type": "array", "description": "Transaction ledger list" }
+      },
+      "required": ["uid", "fullName", "email", "coins", "joinedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection storing all user accounts and balances"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Reward Rush - Premium Dashboard",
+  "description": "An ultra-sleek, premium dark glassmorphism mobile dashboard featuring Reward Rush task workflows, interactive surveys, a lucky spin wheel, and AI Desk assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
