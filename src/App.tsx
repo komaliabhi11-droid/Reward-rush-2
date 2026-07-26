@@ -28,11 +28,11 @@ const INITIAL_USER_STATE: UserState = {
   email: '',
   displayName: '',
   avatarId: 'user-0',
-  balance: 280, // 280 Nav Durga Coins = ₹280.00
-  dailyStreak: 3,
-  lastCheckIn: new Date().toISOString().split('T')[0], // already checked in today
-  completedTasksCount: 3,
-  spins: 9, // 9 spins
+  balance: 0,
+  dailyStreak: 0,
+  lastCheckIn: '',
+  completedTasksCount: 0,
+  spins: 0,
   phoneNumber: '',
   upiId: '',
   hasAddedPayoutDetails: false,
@@ -41,40 +41,7 @@ const INITIAL_USER_STATE: UserState = {
   city: '',
   state: '',
   pincode: '',
-  history: [
-    {
-      id: 'tx-withdraw-1',
-      title: 'Withdrawal via UPI',
-      amount: -100, // -100 coins = -₹100.00
-      timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-      type: 'redeem',
-      status: 'pending'
-    },
-    {
-      id: 'tx-spin-1',
-      title: 'Spin wheel reward',
-      amount: 30, // +30 coins = +₹30.00
-      timestamp: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-      type: 'earn',
-      status: 'completed'
-    },
-    {
-      id: 'tx-checkin-1',
-      title: 'Daily Check-In Reward credited',
-      amount: 20, // +20 coins = +₹20.00
-      timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-      type: 'earn',
-      status: 'completed'
-    },
-    {
-      id: 'tx-offer-1',
-      title: 'Completed offer: Install app',
-      amount: 0,
-      timestamp: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
-      type: 'earn',
-      status: 'completed'
-    }
-  ]
+  history: []
 };
 
 const INITIAL_TASKS: TaskItem[] = [

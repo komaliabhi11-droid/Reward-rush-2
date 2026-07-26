@@ -123,8 +123,6 @@ export default function Leaderboard({
   useEffect(() => {
     const handleReturnToApp = async () => {
       if (showCpxOfferwall && cpxUrl) {
-        console.log("Detected user returning from CPX Offerwall. Auto-navigating and refreshing balance/ledger...");
-        
         // Close overlay
         setShowCpxOfferwall(false);
         

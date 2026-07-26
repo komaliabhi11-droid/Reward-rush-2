@@ -72,10 +72,10 @@ export default function Splash({ onLogin }: SplashProps) {
           isBanned: false,
           paymentDetails: {},
           notifications: 0,
-          dailyStreak: 3,
-          lastCheckIn: new Date().toISOString().split('T')[0],
-          completedTasksCount: 3,
-          spins: 9,
+          dailyStreak: 0,
+          lastCheckIn: '',
+          completedTasksCount: 0,
+          spins: 0,
           history: []
         };
         
@@ -142,10 +142,10 @@ export default function Splash({ onLogin }: SplashProps) {
           isBanned: false,
           paymentDetails: {},
           notifications: 0,
-          dailyStreak: 3,
-          lastCheckIn: new Date().toISOString().split('T')[0],
-          completedTasksCount: 3,
-          spins: 9,
+          dailyStreak: 0,
+          lastCheckIn: '',
+          completedTasksCount: 0,
+          spins: 0,
           history: []
         };
         await setDoc(userDocRef, freshUserDoc);

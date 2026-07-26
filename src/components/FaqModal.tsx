@@ -142,9 +142,9 @@ export default function FaqModal({ isOpen, onClose, themeMode = 'oled' }: FaqMod
                 <div className="p-3.5 rounded-2xl bg-white/5 border border-white/5 flex items-start gap-2.5">
                   <Mail className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
                   <div>
-                    <h4 className="text-[11px] font-bold text-zinc-200">Contact Simulated Support</h4>
+                    <h4 className="text-[11px] font-bold text-zinc-200">Contact Support</h4>
                     <p className="text-[9px] text-zinc-500 leading-snug mt-0.5">
-                      Need custom developer help? Shoot a ticket to <span className="text-amber-500">sandbox@rewardrush.com</span>
+                      Need help? Shoot a ticket to our support team directly from the app interface.
                     </p>
                   </div>
                 </div>
