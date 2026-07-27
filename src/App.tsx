@@ -279,34 +279,18 @@ export default function App() {
         const currentData = snap.data();
         const mappedState = mapFirestoreToUserState(currentData);
         
-        if (creditedSurvey) {
-          const rewardAmount = 280; // CPX Research survey reward is 280 coins
-          const newTx = {
-            id: `tx-cpx-${Date.now()}`,
-            title: "CPX Research Survey - Reward Credited",
-            amount: rewardAmount,
-            timestamp: new Date().toISOString(),
-            type: 'earn' as const,
-            status: 'completed' as const
-          };
-          
-          const updatedHistory = [newTx, ...(mappedState.history || [])];
-          const updatedBalance = mappedState.balance + rewardAmount;
-          const updatedCompletedCount = mappedState.completedTasksCount + 1;
-          
-          const mergedUser = {
-            ...mappedState,
-            balance: updatedBalance,
-            completedTasksCount: updatedCompletedCount,
-            history: updatedHistory
-          };
-          
-          const firestoreData = mapUserStateToFirestore(mergedUser, currentUser.uid);
-          await updateDoc(docRef, firestoreData);
-          setUser(mergedUser);
-          triggerToast('Survey Credited! 🎉 +280 Coins', 280);
+        // Detect if balance increased compared to local state
+        const oldBalance = user.balance;
+        const newBalance = mappedState.balance;
+        const diff = newBalance - oldBalance;
+        
+        setUser(mappedState);
+        
+        if (diff > 0) {
+          triggerToast(`Reward Credited! 🎉 +${diff} Coins`, diff);
+        } else if (creditedSurvey) {
+          triggerToast('Syncing with CPX server... 🔄');
         } else {
-          setUser(mappedState);
           triggerToast('Wallet Synchronized! 🔄');
         }
       }

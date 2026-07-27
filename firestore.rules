@@ -58,5 +58,13 @@ service cloud.firestore {
                       
       allow delete: if false; // Users cannot delete their records via client SDK
     }
+
+    // Offer History Collection rules
+    match /offerHistory/{transactionId} {
+      // User can read their own offer completion records
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      // Strictly deny any client-side creation or edits - system writes only
+      allow write: if false;
+    }
   }
 }

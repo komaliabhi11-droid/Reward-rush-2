@@ -27,12 +27,32 @@
         "history": { "type": "array", "description": "Transaction ledger list" }
       },
       "required": ["uid", "fullName", "email", "coins", "joinedAt"]
+    },
+    "Offer": {
+      "title": "CPX Offer Completion",
+      "description": "Records of CPX surveys or general offer wall completions",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User UID who completed the offer" },
+        "offerId": { "type": "string", "description": "The offer or survey ID from CPX" },
+        "transactionId": { "type": "string", "description": "Unique CPX transaction ID" },
+        "amountLocal": { "type": "string", "description": "Currency value earned in local units" },
+        "amountUSD": { "type": "string", "description": "Value earned in USD" },
+        "coinsAwarded": { "type": "number", "description": "Coins added to user's balance" },
+        "status": { "type": "string", "description": "Completion status of the offer (e.g. completed, reversed)" },
+        "completedAt": { "type": "string", "description": "ISO timestamp of completion" }
+      },
+      "required": ["uid", "transactionId", "coinsAwarded", "status", "completedAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "Collection storing all user accounts and balances"
+    },
+    "/offerHistory/{transactionId}": {
+      "schema": "Offer",
+      "description": "Collection storing completed surveys and transaction IDs to prevent duplicates"
     }
   }
 }
