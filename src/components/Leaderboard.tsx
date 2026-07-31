@@ -172,21 +172,25 @@ export default function Leaderboard({
         }
         const data = await response.json();
         
-        if (data.success && data.secure_hash) {
+        if (data.success) {
           // Resolve app ID priority: ensure we use the new App ID (34945) and completely ignore the old App ID (34409)
           const rawAppId = (import.meta as any).env.VITE_CPX_APP_ID || data.app_id || '34945';
           const appId = rawAppId === '34409' ? '34945' : rawAppId;
           const secureHash = data.secure_hash;
           const extUserId = uid;
           
-          // Build the CPX URL dynamically
-          const dynamicUrl = `https://offers.cpx-research.com/index.php?app_id=${appId}&ext_user_id=${encodeURIComponent(extUserId)}&secure_hash=${secureHash}`;
+          // Build the CPX URL dynamically (conditionally include secure_hash if available and enabled)
+          let dynamicUrl = `https://offers.cpx-research.com/index.php?app_id=${appId}&ext_user_id=${encodeURIComponent(extUserId)}`;
+          if (secureHash && data.secure_hash_enabled !== false) {
+            dynamicUrl += `&secure_hash=${secureHash}`;
+          }
           
           console.log('[CPX Offerwall URL Generation Successful]:', {
             url: dynamicUrl,
             app_id: appId,
             ext_user_id: extUserId,
-            secure_hash: secureHash
+            secure_hash: secureHash,
+            secure_hash_enabled: data.secure_hash_enabled
           });
           
           setCpxUrl(dynamicUrl);
