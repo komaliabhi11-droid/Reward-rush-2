@@ -92,32 +92,16 @@ export default function Leaderboard({
   const [showCpxOfferwall, setShowCpxOfferwall] = useState(false);
   const [cpxLoading, setCpxLoading] = useState(true);
   const [cpxError, setCpxError] = useState(false);
-  const [iframeKey, setIframeKey] = useState(0);
   const [cpxUrl, setCpxUrl] = useState<string>('');
-  const [openInNewTabMode, setOpenInNewTabMode] = useState<boolean>(false);
 
   // Handle opening CPX in a new tab helper
   const handleOpenCpxInNewTab = (urlToOpen?: string) => {
     const targetUrl = urlToOpen || cpxUrl;
     if (targetUrl) {
+      console.log('[CPX Offerwall]: Opening dynamic URL:', targetUrl);
       window.open(targetUrl, '_blank');
     }
   };
-
-  // Safety loading timeout for CPX Research. If iframe load fails/hangs, prompt or open in new tab
-  useEffect(() => {
-    let timer: any;
-    if (showCpxOfferwall && cpxLoading && cpxUrl && !openInNewTabMode) {
-      timer = setTimeout(() => {
-        // If still loading in iframe after 8 seconds, trigger graceful fallback to new tab
-        console.warn("CPX iframe load timed out. Falling back to secure new tab.");
-        setCpxLoading(false);
-        setCpxError(true);
-        handleOpenCpxInNewTab();
-      }, 8000);
-    }
-    return () => clearTimeout(timer);
-  }, [showCpxOfferwall, cpxLoading, iframeKey, cpxUrl, openInNewTabMode]);
 
   // Return/Focus listener to refresh wallet & return user to dashboard when they return from CPX Offerwall
   useEffect(() => {
@@ -153,8 +137,33 @@ export default function Leaderboard({
       setCpxError(false);
       setShowCpxOfferwall(true);
 
+      // Clear any potential cached CPX values from storage
+      try {
+        console.log('[CPX Offerwall]: Clearing local storage & session storage caches related to CPX Research');
+        localStorage.removeItem('cpx_url');
+        localStorage.removeItem('cpx_hash');
+        sessionStorage.removeItem('cpx_url');
+        sessionStorage.removeItem('cpx_hash');
+        
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && (key.toLowerCase().includes('cpx') || key.toLowerCase().includes('offerwall'))) {
+            localStorage.removeItem(key);
+          }
+        }
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const key = sessionStorage.key(i);
+          if (key && (key.toLowerCase().includes('cpx') || key.toLowerCase().includes('offerwall'))) {
+            sessionStorage.removeItem(key);
+          }
+        }
+      } catch (e) {
+        console.warn('[CPX Offerwall]: Cache clear warning:', e);
+      }
+
       try {
         const uid = auth.currentUser?.uid || 'guest_user';
+        console.log('[CPX Offerwall Initiating]: Fetching secure hash for ext_user_id (UID):', uid);
         
         // Fetch the MD5 secure hash dynamically generated from our backend logic
         const response = await fetch(`/api/cpx-hash?uid=${encodeURIComponent(uid)}`);
@@ -164,14 +173,28 @@ export default function Leaderboard({
         const data = await response.json();
         
         if (data.success && data.secure_hash) {
-          // Build the CPX URL dynamically using: app_id = 34409, ext_user_id = Firebase UID, and secure_hash
-          const dynamicUrl = `https://offers.cpx-research.com/index.php?app_id=34409&ext_user_id=${encodeURIComponent(uid)}&secure_hash=${data.secure_hash}`;
-          setCpxUrl(dynamicUrl);
+          // Resolve app ID priority: ensure we use the new App ID (34945) and completely ignore the old App ID (34409)
+          const rawAppId = (import.meta as any).env.VITE_CPX_APP_ID || data.app_id || '34945';
+          const appId = rawAppId === '34409' ? '34945' : rawAppId;
+          const secureHash = data.secure_hash;
+          const extUserId = uid;
           
-          if (openInNewTabMode) {
-            // Automatically open in new tab if toggled
-            window.open(dynamicUrl, '_blank');
-          }
+          // Build the CPX URL dynamically
+          const dynamicUrl = `https://offers.cpx-research.com/index.php?app_id=${appId}&ext_user_id=${encodeURIComponent(extUserId)}&secure_hash=${secureHash}`;
+          
+          console.log('[CPX Offerwall URL Generation Successful]:', {
+            url: dynamicUrl,
+            app_id: appId,
+            ext_user_id: extUserId,
+            secure_hash: secureHash
+          });
+          
+          setCpxUrl(dynamicUrl);
+          setCpxLoading(false);
+          
+          // Automatically try to open in a new tab/WebView
+          console.log('[CPX Offerwall]: Auto-opening dynamic URL in new tab:', dynamicUrl);
+          window.open(dynamicUrl, '_blank');
         } else {
           throw new Error('Invalid backend hash structure');
         }
@@ -402,11 +425,11 @@ export default function Leaderboard({
       {/* Real CPX Research Offerwall Modal Overlay */}
       <AnimatePresence>
         {showCpxOfferwall && (
-          <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950 p-4">
-            {/* Header with Back/Close and Mode toggle */}
+          <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950 p-4 animate-fade-in">
+            {/* Header with Back/Close */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/5 mb-4 gap-3">
               <div className="flex items-center gap-2.5">
-                <span className="text-xs bg-emerald-500 text-black px-2 py-0.5 rounded-md uppercase font-black tracking-widest leading-none">
+                <span className="text-xs bg-emerald-500 text-black px-2 py-0.5 rounded-md uppercase font-black tracking-widest leading-none animate-pulse">
                   LIVE
                 </span>
                 <h3 className="text-sm font-black text-white uppercase tracking-wider">
@@ -416,30 +439,6 @@ export default function Leaderboard({
               
               {/* Controls inside header */}
               <div className="flex items-center gap-3 self-end sm:self-auto">
-                {/* Embedded vs New Tab Mode Selector */}
-                <div className="flex items-center bg-zinc-900 border border-white/10 rounded-xl p-1 gap-1">
-                  <button
-                    onClick={() => {
-                      setOpenInNewTabMode(false);
-                      setIframeKey(prev => prev + 1);
-                      setCpxLoading(true);
-                      setCpxError(false);
-                    }}
-                    className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${!openInNewTabMode ? 'bg-zinc-800 text-white border border-white/5' : 'text-zinc-500 hover:text-zinc-300'}`}
-                  >
-                    Embedded
-                  </button>
-                  <button
-                    onClick={() => {
-                      setOpenInNewTabMode(true);
-                      handleOpenCpxInNewTab();
-                    }}
-                    className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${openInNewTabMode ? 'bg-zinc-800 text-white border border-white/5' : 'text-zinc-500 hover:text-zinc-300'}`}
-                  >
-                    New Tab
-                  </button>
-                </div>
-
                 {/* Close button */}
                 <button
                   onClick={async () => {
@@ -460,8 +459,40 @@ export default function Leaderboard({
             </div>
 
             {/* Main Stage Wrapper */}
-            <div className="flex-1 rounded-2xl overflow-hidden bg-zinc-900 border border-white/5 relative flex flex-col items-center justify-center">
-              {openInNewTabMode ? (
+            <div className="flex-1 rounded-2xl overflow-hidden bg-zinc-900/60 border border-white/5 relative flex flex-col items-center justify-center">
+              {cpxLoading ? (
+                /* Elegant loading state while constructing URL */
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/90 gap-3.5 z-10">
+                  <Loader2 className="w-9 h-9 text-amber-500 animate-spin" />
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest animate-pulse">
+                    Preparing secure survey session...
+                  </span>
+                </div>
+              ) : cpxError ? (
+                /* Beautiful Error Screen */
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 p-6 text-center gap-4 z-20">
+                  <div className="w-12 h-12 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-full flex items-center justify-center">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <div className="flex flex-col gap-1 max-w-[260px]">
+                    <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                      Initialization Failed
+                    </h3>
+                    <p className="text-[10px] text-zinc-500 leading-relaxed">
+                      We failed to securely initialize your CPX Research survey session. Please check your network connection and try again.
+                    </p>
+                  </div>
+                  
+                  <div className="flex gap-2.5 w-full max-w-xs mt-2 justify-center">
+                    <button
+                      onClick={() => handleStartSurvey(SURVEY_PARTNERS[0])}
+                      className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-[10px] font-black uppercase tracking-wider rounded-xl hover:opacity-95 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      Retry Connection
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 /* Beautiful dashboard view for New Tab Mode */
                 <div className="flex flex-col items-center justify-center p-8 text-center max-w-sm mx-auto gap-5">
                   <div className="w-16 h-16 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center animate-pulse">
@@ -505,70 +536,6 @@ export default function Leaderboard({
                     </button>
                   </div>
                 </div>
-              ) : (
-                /* Standard Embedded Iframe Mode */
-                <>
-                  {cpxLoading && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 gap-3.5 z-10">
-                      <Loader2 className="w-9 h-9 text-amber-500 animate-spin" />
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest animate-pulse">
-                        Connecting to CPX survey engine...
-                      </span>
-                    </div>
-                  )}
-
-                  {cpxError && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 p-6 text-center gap-4 z-20">
-                      <div className="w-12 h-12 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-full flex items-center justify-center">
-                        <AlertCircle className="w-6 h-6" />
-                      </div>
-                      <div className="flex flex-col gap-1 max-w-[260px]">
-                        <h3 className="text-xs font-black text-white uppercase tracking-wider">
-                          Iframe Connection Blocked
-                        </h3>
-                        <p className="text-[10px] text-zinc-500 leading-relaxed">
-                          CPX security headers or browser protections are blocking embedded iframe loading on this domain.
-                        </p>
-                      </div>
-                      
-                      <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-xs mt-2">
-                        <button
-                          onClick={() => {
-                            setOpenInNewTabMode(true);
-                            handleOpenCpxInNewTab();
-                          }}
-                          className="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-black text-[10px] font-black uppercase tracking-wider rounded-xl hover:opacity-95 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Open in Tab Instead
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCpxError(false);
-                            setCpxLoading(true);
-                            setIframeKey(prev => prev + 1);
-                          }}
-                          className="flex-1 py-2.5 bg-zinc-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-xl hover:bg-zinc-750 active:scale-95 transition-all cursor-pointer border border-white/5"
-                        >
-                          Retry Iframe
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {cpxUrl && (
-                    <iframe
-                      key={iframeKey}
-                      src={cpxUrl}
-                      className={`w-full h-full border-none bg-zinc-950 ${cpxLoading || cpxError ? 'hidden' : 'block'}`}
-                      onLoad={() => setCpxLoading(false)}
-                      onError={() => {
-                        setCpxLoading(false);
-                        setCpxError(true);
-                      }}
-                    />
-                  )}
-                </>
               )}
             </div>
           </div>

@@ -15,6 +15,9 @@ export const handler = async (event: any, context: any) => {
     const input = `${uid}-${secureHashKey}`;
     const hash = crypto.createHash("md5").update(input).digest("hex");
 
+    const rawAppId = process.env.VITE_CPX_APP_ID || "34945";
+    const appId = rawAppId === "34409" ? "34945" : rawAppId;
+
     return {
       statusCode: 200,
       headers: {
@@ -23,7 +26,7 @@ export const handler = async (event: any, context: any) => {
       },
       body: JSON.stringify({
         success: true,
-        app_id: 34409,
+        app_id: appId,
         ext_user_id: uid,
         secure_hash: hash,
       })

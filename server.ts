@@ -35,9 +35,12 @@ async function startServer() {
       const input = `${uid}-${secureHashKey}`;
       const hash = crypto.createHash("md5").update(input).digest("hex");
 
+      const rawAppId = process.env.VITE_CPX_APP_ID || "34945";
+      const appId = rawAppId === "34409" ? "34945" : rawAppId;
+
       return res.json({
         success: true,
-        app_id: 34409,
+        app_id: appId,
         ext_user_id: uid,
         secure_hash: hash,
       });
