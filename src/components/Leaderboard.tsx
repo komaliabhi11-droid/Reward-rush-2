@@ -165,43 +165,48 @@ export default function Leaderboard({
         const uid = auth.currentUser?.uid || 'guest_user';
         console.log('[CPX Offerwall Initiating]: Fetching secure hash for ext_user_id (UID):', uid);
         
-        // Fetch the MD5 secure hash dynamically generated from our backend logic
-        const response = await fetch(`/api/cpx-hash?uid=${encodeURIComponent(uid)}`);
-        if (!response.ok) {
-          throw new Error('Backend failed to generate secure hash signature');
-        }
-        const data = await response.json();
-        
-        if (data.success) {
-          // Resolve app ID priority: ensure we use the new App ID (34945) and completely ignore the old App ID (34409)
-          const rawAppId = (import.meta as any).env.VITE_CPX_APP_ID || data.app_id || '34945';
-          const appId = rawAppId === '34409' ? '34945' : rawAppId;
-          const secureHash = data.secure_hash;
-          const extUserId = uid;
-          
-          // Build the CPX URL dynamically (conditionally include secure_hash if available and enabled)
-          let dynamicUrl = `https://offers.cpx-research.com/index.php?app_id=${appId}&ext_user_id=${encodeURIComponent(extUserId)}`;
-          if (secureHash && data.secure_hash_enabled !== false) {
-            dynamicUrl += `&secure_hash=${secureHash}`;
+        let appId = '34945';
+        let secureHash = null;
+        let secureHashEnabled = false;
+
+        try {
+          // Fetch the MD5 secure hash dynamically generated from our backend logic
+          const response = await fetch(`/api/cpx-hash?uid=${encodeURIComponent(uid)}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.success) {
+              const rawAppId = (import.meta as any).env.VITE_CPX_APP_ID || data.app_id || '34945';
+              appId = rawAppId === '34409' ? '34945' : rawAppId;
+              secureHash = data.secure_hash;
+              secureHashEnabled = data.secure_hash_enabled !== false;
+            }
+          } else {
+            console.warn('Backend cpx-hash returned non-OK status. Falling back to client-side default URL construction.');
           }
-          
-          console.log('[CPX Offerwall URL Generation Successful]:', {
-            url: dynamicUrl,
-            app_id: appId,
-            ext_user_id: extUserId,
-            secure_hash: secureHash,
-            secure_hash_enabled: data.secure_hash_enabled
-          });
-          
-          setCpxUrl(dynamicUrl);
-          setCpxLoading(false);
-          
-          // Automatically try to open in a new tab/WebView
-          console.log('[CPX Offerwall]: Auto-opening dynamic URL in new tab:', dynamicUrl);
-          window.open(dynamicUrl, '_blank');
-        } else {
-          throw new Error('Invalid backend hash structure');
+        } catch (fetchErr) {
+          console.warn('Failed to fetch secure hash from backend. Using safe client-side fallback URL without secure_hash:', fetchErr);
         }
+
+        // Build the CPX URL dynamically (conditionally include secure_hash if available and enabled)
+        let dynamicUrl = `https://offers.cpx-research.com/index.php?app_id=${appId}&ext_user_id=${encodeURIComponent(uid)}`;
+        if (secureHash && secureHashEnabled) {
+          dynamicUrl += `&secure_hash=${secureHash}`;
+        }
+        
+        console.log('[CPX Offerwall URL Generation Successful]:', {
+          url: dynamicUrl,
+          app_id: appId,
+          ext_user_id: uid,
+          secure_hash: secureHash,
+          secure_hash_enabled: secureHashEnabled
+        });
+        
+        setCpxUrl(dynamicUrl);
+        setCpxLoading(false);
+        
+        // Automatically try to open in a new tab/WebView
+        console.log('[CPX Offerwall]: Auto-opening dynamic URL in new tab:', dynamicUrl);
+        window.open(dynamicUrl, '_blank');
       } catch (err) {
         console.error('Failed to construct dynamic CPX URL:', err);
         setCpxError(true);
