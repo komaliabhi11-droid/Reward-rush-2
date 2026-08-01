@@ -14,6 +14,8 @@ import CalendarModal from './components/CalendarModal';
 import AiDeskModal from './components/AiDeskModal';
 import FaqModal from './components/FaqModal';
 import NavDurgaCoin from './components/NavDurgaCoin';
+import { useUnityAds } from './components/UnityAdsProvider';
+import UnityBannerAd from './components/UnityBannerAd';
 
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -85,8 +87,16 @@ const INITIAL_TASKS: TaskItem[] = [
 ];
 
 export default function App() {
+  const { 
+    incrementNavigationCount, 
+    incrementSurveyCount, 
+    setIsWithdrawing, 
+    isAdActive 
+  } = useUnityAds();
+
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [user, setUser] = useState<UserState>(INITIAL_USER_STATE);
+  const [firebaseError, setFirebaseError] = useState<string | null>(null);
 
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
     const data = localStorage.getItem(STORAGE_TASKS_KEY);
@@ -94,6 +104,17 @@ export default function App() {
   });
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'earn' | 'leaderboard' | 'redeem' | 'profile'>('dashboard');
+
+  const handleTabChange = (tab: typeof activeTab) => {
+    if (tab !== activeTab) {
+      setActiveTab(tab);
+      incrementNavigationCount();
+    }
+  };
+
+  useEffect(() => {
+    setIsWithdrawing(activeTab === 'redeem');
+  }, [activeTab, setIsWithdrawing]);
   const [themeMode, setThemeMode] = useState<'oled' | 'cool-gray'>(() => {
     const mode = localStorage.getItem(STORAGE_THEME_KEY);
     return (mode === 'cool-gray' ? 'cool-gray' : 'oled') as 'oled' | 'cool-gray';
@@ -162,11 +183,29 @@ export default function App() {
             const mappedState = mapFirestoreToUserState(snap.data());
             setUser(mappedState);
             setIsLoggedIn(true);
+            setFirebaseError(null);
           } else {
-            console.warn("User profile does not exist in Firestore.");
+            console.warn("User profile does not exist in Firestore. Auto-initializing with defaults...");
+            const currentUser = auth.currentUser;
+            if (currentUser) {
+              const freshUserDoc = mapUserStateToFirestore({
+                ...INITIAL_USER_STATE,
+                email: currentUser.email || '',
+                displayName: currentUser.displayName || 'Member Node'
+              }, currentUser.uid);
+              updateDoc(docRef, freshUserDoc)
+                .then(() => {
+                  setFirebaseError(null);
+                })
+                .catch(e => {
+                  console.error("Auto profile creation failed:", e);
+                  setFirebaseError("Failed to auto-create user profile. Please check your Firestore security rules.");
+                });
+            }
           }
         }, (err) => {
-          handleFirestoreError(err, OperationType.GET, 'users/' + firebaseUser.uid);
+          console.error("Firestore onSnapshot subscription failed:", err);
+          setFirebaseError("Firestore permission error: 'Missing or insufficient permissions'. This indicates that the Security Rules on your Firebase Firestore console are blocking this read, or have expired (default rules expire in 30 days). To fix this, please deploy the rules from 'firestore.rules' inside your project root to your Firebase project, or allow read/write access for authenticated users in your Firebase console.");
         });
 
         return () => {
@@ -295,7 +334,8 @@ export default function App() {
         }
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.GET, 'users/' + currentUser.uid);
+      console.error("Failed to refresh user data:", err);
+      setFirebaseError("Failed to synchronize wallet database. Please ensure your Firestore Security Rules are active on your Firebase Console.");
     }
   };
 
@@ -321,13 +361,31 @@ export default function App() {
 
   // Claim Daily Rewards
   const handleClaimDaily = async () => {
-    const todayString = new Date().toISOString().split('T')[0];
+    const nowISO = new Date().toISOString();
     
-    // Dynamic streak rewards mapping (1 coin = 1 rupee)
-    const streakRewards = [10, 20, 30, 50, 100, 150, 250];
-    const currentStreak = user.dailyStreak;
-    // Next streak day is (currentStreak % 7) + 1
-    const nextDay = (currentStreak >= 7) ? 1 : currentStreak + 1;
+    // 5-day login streak rewards in Rupees (which is exactly equivalent to Coins: 1 Coin = ₹1)
+    const streakRewards = [0.10, 0.20, 0.30, 0.40, 0.50];
+    let currentStreak = user.dailyStreak;
+
+    // Check if the user missed a day or if streak resets
+    if (user.lastCheckIn) {
+      const lastCheckInTime = new Date(user.lastCheckIn).getTime();
+      const elapsed = Date.now() - lastCheckInTime;
+      
+      // Strict 24-hour claim rule
+      if (elapsed < 24 * 60 * 60 * 1000) {
+        triggerToast('Only claim once every 24 hours!');
+        return;
+      }
+      
+      // Reset if user missed more than 48 hours
+      if (elapsed > 48 * 60 * 60 * 1000) {
+        currentStreak = 0;
+      }
+    }
+
+    // Reset back to Day 1 after Day 5
+    const nextDay = (currentStreak >= 5) ? 1 : currentStreak + 1;
     const rewardAmount = streakRewards[nextDay - 1];
 
     const newHistory = [
@@ -335,7 +393,7 @@ export default function App() {
         id: `tx-checkin-${Date.now()}`,
         title: `Day ${nextDay} Streak Reward credited`,
         amount: rewardAmount,
-        timestamp: new Date().toISOString(),
+        timestamp: nowISO,
         type: 'earn' as const,
         status: 'completed' as const
       },
@@ -343,19 +401,28 @@ export default function App() {
     ];
 
     await handleUpdateProfile({
-      balance: user.balance + rewardAmount,
+      balance: parseFloat((user.balance + rewardAmount).toFixed(2)),
       dailyStreak: nextDay,
-      lastCheckIn: todayString,
+      lastCheckIn: nowISO,
       history: newHistory
     });
 
     addNotification(
       'Daily Streak Claimed! 🔥',
-      `You successfully claimed your Day ${nextDay} streak reward of +${rewardAmount} coins!`,
+      `You successfully claimed your Day ${nextDay} streak reward of +₹${rewardAmount.toFixed(2)}!`,
       'streak'
     );
 
     triggerToast(`Day ${nextDay} Streak claimed!`, rewardAmount);
+
+    // Trigger premium confetti celebration on daily rewards
+    import('canvas-confetti').then((confettiModule) => {
+      confettiModule.default({
+        particleCount: 80,
+        spread: 60,
+        origin: { y: 0.75 }
+      });
+    }).catch(err => console.error("Confetti failed to load:", err));
   };
 
   // AI Desk verified screenshot bonus injector
@@ -386,6 +453,14 @@ export default function App() {
 
   // Complete Reward Tasks & Process Redemptions
   const handleCompleteTask = async (taskId: string, reward: number, taskTitle: string, status?: 'pending' | 'completed', spinsChange?: number) => {
+    // Check if this is a newly completed survey to increment the Unity Interstitial trigger count
+    const exists = user.history.some(tx => tx.id === taskId);
+    const isRedemption = reward < 0;
+
+    if (!exists && !isRedemption && (taskId.toLowerCase().includes('survey') || taskTitle.toLowerCase().includes('survey'))) {
+      incrementSurveyCount();
+    }
+
     // 1. Mark task as completed if it's an interactive earn task
     if (!taskId.startsWith('tx-')) {
       setTasks(prev =>
@@ -394,11 +469,7 @@ export default function App() {
     }
 
     // 2. Determine if this is a redemption/deduction
-    const isRedemption = reward < 0;
     const absReward = Math.abs(reward);
-
-    // Check if transaction already exists in history
-    const exists = user.history.some(tx => tx.id === taskId);
     let updatedHistory;
 
     if (exists) {
@@ -430,7 +501,7 @@ export default function App() {
     }
 
     await handleUpdateProfile({
-      balance: user.balance + reward, // correctly adds positive and subtracts negative values
+      balance: parseFloat((user.balance + reward).toFixed(2)), // correctly adds positive and subtracts negative values with floating point safety
       completedTasksCount: (isRedemption || exists) ? user.completedTasksCount : user.completedTasksCount + 1,
       spins: (user.spins !== undefined ? user.spins : 9) + (spinsChange || 0),
       history: updatedHistory
@@ -607,7 +678,30 @@ export default function App() {
         )}
 
         {/* Dynamic App Content Body */}
-        <div className="flex-1 overflow-y-auto p-5 relative">
+        <div className={`flex-1 overflow-y-auto p-5 relative ${isLoggedIn && (activeTab === 'dashboard' || activeTab === 'redeem' || activeTab === 'profile') ? 'pb-24' : ''}`}>
+          {firebaseError && (
+            <div className="mb-4 p-4 rounded-xl border border-red-500/20 bg-red-950/40 text-red-200 text-xs leading-relaxed space-y-2 backdrop-blur-md">
+              <div className="flex items-center gap-2 text-red-400 font-extrabold font-mono text-[10px] uppercase tracking-wider">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span>Firestore Connection Interrupted</span>
+              </div>
+              <p>{firebaseError}</p>
+              <div className="pt-1 flex gap-3">
+                <button 
+                  onClick={() => handleRefreshUserData()}
+                  className="px-2.5 py-1 bg-red-500 hover:bg-red-400 text-black font-extrabold rounded-lg font-mono tracking-tight transition-all text-[10px] active:scale-95 cursor-pointer"
+                >
+                  🔄 Retry Connection
+                </button>
+                <button 
+                  onClick={() => setFirebaseError(null)}
+                  className="px-2.5 py-1 bg-white/10 hover:bg-white/15 text-white font-bold rounded-lg font-mono transition-all text-[10px] active:scale-95 cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
           <AnimatePresence mode="wait">
             {!isLoggedIn ? (
               <motion.div
@@ -655,7 +749,7 @@ export default function App() {
                     onOpenAiDesk={() => setIsAiDeskOpen(true)}
                     onOpenFaq={() => setIsFaqOpen(true)}
                     themeMode={themeMode}
-                    onTabChange={setActiveTab}
+                    onTabChange={handleTabChange}
                   />
                 )}
                 {activeTab === 'earn' && (
@@ -671,7 +765,7 @@ export default function App() {
                     user={user} 
                     onCompleteTask={handleCompleteTask} 
                     themeMode={themeMode} 
-                    onSetActiveTab={setActiveTab}
+                    onSetActiveTab={handleTabChange}
                     onRefreshUserData={handleRefreshUserData}
                   />
                 )}
@@ -679,7 +773,7 @@ export default function App() {
                   <Redeem 
                     user={user} 
                     onCompleteTask={handleCompleteTask} 
-                    onTabChange={setActiveTab} 
+                    onTabChange={handleTabChange} 
                     onUpdateUser={handleUpdateProfile}
                     triggerToast={triggerToast}
                   />
@@ -700,9 +794,14 @@ export default function App() {
           </AnimatePresence>
         </div>
 
+        {/* Render Unity Banner Ad only if logged in */}
+        {isLoggedIn && (
+          <UnityBannerAd activeTab={activeTab} />
+        )}
+
         {/* Render bottom navigation only if logged in */}
         {isLoggedIn && (
-          <Navigation activeTab={activeTab} onTabChange={setActiveTab} themeMode={themeMode} />
+          <Navigation activeTab={activeTab} onTabChange={handleTabChange} themeMode={themeMode} />
         )}
 
         {/* In-App Notification Center Drawer */}

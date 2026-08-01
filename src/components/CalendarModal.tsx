@@ -21,21 +21,36 @@ export default function CalendarModal({
   inline = false
 }: CalendarModalProps) {
   const isOled = themeMode === 'oled';
-  const todayString = new Date().toISOString().split('T')[0];
-  const isCheckedInToday = user.lastCheckIn === todayString;
+  
+  // Calculate checked in & streak state based on 24/48 hr lapse
+  let isCheckedInToday = false;
+  let effectiveStreak = user.dailyStreak;
+
+  if (user.lastCheckIn) {
+    const lastCheckInTime = new Date(user.lastCheckIn).getTime();
+    const elapsed = Date.now() - lastCheckInTime;
+    if (elapsed < 24 * 60 * 60 * 1000) {
+      isCheckedInToday = true;
+    } else if (elapsed > 48 * 60 * 60 * 1000) {
+      effectiveStreak = 0; // Reset streak if missed more than 48 hours
+    }
+  }
 
   // Countdown timer calculation
-  const [countdown, setCountdown] = useState('23h 50m 09s');
+  const [countdown, setCountdown] = useState('');
 
   useEffect(() => {
     const updateTimer = () => {
-      const now = new Date();
-      const tomorrow = new Date();
-      tomorrow.setHours(24, 0, 0, 0); // Midnight
-      const diff = tomorrow.getTime() - now.getTime();
+      if (!user.lastCheckIn) {
+        setCountdown('Available Now');
+        return;
+      }
+      const lastCheckInTime = new Date(user.lastCheckIn).getTime();
+      const nextClaimTime = lastCheckInTime + 24 * 60 * 60 * 1000;
+      const diff = nextClaimTime - Date.now();
 
       if (diff <= 0) {
-        setCountdown('00h 00m 00s');
+        setCountdown('Available Now');
         return;
       }
 
@@ -51,17 +66,15 @@ export default function CalendarModal({
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user.lastCheckIn]);
 
-  // Streak rewards list representing the values in 1:1 ratio (1 coin = 1 rupee)
+  // Streak rewards list representing the values in Rupees
   const streakRewards = [
-    { day: 1, amount: 10, label: '₹10' },
-    { day: 2, amount: 20, label: '₹20' },
-    { day: 3, amount: 30, label: '₹30' },
-    { day: 4, amount: 50, label: '₹50' },
-    { day: 5, amount: 100, label: '₹100' },
-    { day: 6, amount: 150, label: '₹150' },
-    { day: 7, amount: 250, label: '₹250' }
+    { day: 1, amount: 0.10, label: '₹0.10' },
+    { day: 2, amount: 0.20, label: '₹0.20' },
+    { day: 3, amount: 0.30, label: '₹0.30' },
+    { day: 4, amount: 0.40, label: '₹0.40' },
+    { day: 5, amount: 0.50, label: '₹0.50' }
   ];
 
   const handleClaim = () => {
@@ -97,35 +110,36 @@ export default function CalendarModal({
 
       {/* Countdown Timer Badge */}
       <div className="w-full flex justify-center mb-4">
-        <div className="border border-amber-500/30 bg-amber-500/10 text-amber-500 font-mono text-[10px] tracking-widest font-extrabold uppercase px-6 py-2 rounded-full text-center">
-          Next unlock in: {countdown}
+        <div className={`border font-mono text-[10px] tracking-widest font-extrabold uppercase px-6 py-2 rounded-full text-center ${
+          isCheckedInToday ? 'border-amber-500/30 bg-amber-500/10 text-amber-500' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+        }`}>
+          {isCheckedInToday ? `Next claim in: ${countdown}` : 'Claim Bonus Available Now! 🔥'}
         </div>
       </div>
 
-      {/* 7 Days Grid matches Screenshot 9 exactly */}
-      <div className="grid grid-cols-2 gap-3 mb-5">
+      {/* 5 Days Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
         {streakRewards.map((reward) => {
-          // Checkmark Day 1, 2, 3 checked when user.dailyStreak is 3 and isCheckedInToday
-          const isCompleted = user.dailyStreak >= reward.day;
-          const isClaimableToday = !isCheckedInToday && (user.dailyStreak + 1) === reward.day;
-          const isLocked = !isCompleted && !isClaimableToday;
-
+          const isCompleted = effectiveStreak >= reward.day;
+          const isClaimableToday = !isCheckedInToday && (effectiveStreak + 1) === reward.day;
+          
           return (
-            <div
+            <motion.div
               key={reward.day}
+              whileHover={{ scale: 1.02 }}
               className={`p-4 rounded-2xl border flex flex-col items-center justify-between gap-2.5 transition-all duration-300 relative overflow-hidden ${
                 isCompleted
-                  ? 'bg-zinc-950/80 border-emerald-500/30 text-emerald-400'
+                  ? 'bg-[#061c12] border-emerald-500/30 text-emerald-400'
                   : isClaimableToday
-                  ? 'bg-gradient-to-tr from-amber-500/10 to-yellow-500/10 border-amber-500/60 text-amber-400 scale-[1.02] shadow-[0_0_15px_rgba(245,124,0,0.1)]'
+                  ? 'bg-gradient-to-tr from-amber-500/15 to-yellow-500/15 border-amber-500 text-amber-400 shadow-[0_0_15px_rgba(245,124,0,0.15)] animate-pulse'
                   : 'bg-zinc-950/80 border-white/5 text-zinc-500'
-              }`}
+              } ${reward.day === 5 && 'col-span-2 sm:col-span-1'}`}
             >
               <div className="w-full flex justify-between items-center">
                 <span className="text-[10px] font-black uppercase tracking-wider">Day {reward.day}</span>
-                {reward.day === 7 && (
-                  <span className="text-[8px] bg-amber-500 text-black px-1.5 py-0.5 rounded-sm uppercase font-black tracking-widest">
-                    MEGA
+                {reward.day === 5 && (
+                  <span className="text-[8px] bg-amber-500 text-black px-1.5 py-0.5 rounded-sm uppercase font-black tracking-widest leading-none">
+                    MAX
                   </span>
                 )}
               </div>
@@ -137,8 +151,8 @@ export default function CalendarModal({
                     <Check className="w-5 h-5 stroke-[3.5]" />
                   </div>
                 ) : isClaimableToday ? (
-                  <div className="w-9 h-9 rounded-full bg-amber-500 text-black flex items-center justify-center animate-bounce shadow-lg shadow-amber-500/20">
-                    <Sparkles className="w-5 h-5" />
+                  <div className="w-9 h-9 rounded-full bg-amber-500 text-black flex items-center justify-center shadow-lg shadow-amber-500/20">
+                    <Sparkles className="w-5 h-5 animate-spin-slow" />
                   </div>
                 ) : (
                   <div className="w-9 h-9 rounded-full bg-zinc-900 border border-white/5 text-zinc-600 flex items-center justify-center">
@@ -148,10 +162,10 @@ export default function CalendarModal({
               </div>
 
               {/* Display reward amount in Rupee label format */}
-              <div className="text-xs font-black tracking-wider">
+              <div className={`text-xs font-black tracking-wider ${isClaimableToday ? 'text-amber-300 font-extrabold' : ''}`}>
                 {reward.label}
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>
@@ -160,7 +174,7 @@ export default function CalendarModal({
       {!isCheckedInToday ? (
         <button
           onClick={handleClaim}
-          className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-xs font-black uppercase tracking-widest shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 active:scale-95 transition-all duration-200 cursor-pointer text-center"
+          className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black text-xs font-black uppercase tracking-widest shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 active:scale-95 transition-all duration-200 cursor-pointer text-center"
         >
           Claim Bonus
         </button>
@@ -173,7 +187,7 @@ export default function CalendarModal({
       {/* Bottom explanation text */}
       <div className="mt-4 flex items-center justify-center gap-1.5 text-[9px] text-zinc-600 uppercase font-black text-center">
         <Award className="w-3.5 h-3.5 text-amber-500/60" />
-        <span>CONSECUTIVE DAYS REQUIRED FOR MULTIPLIER STREAK</span>
+        <span>CONSECUTIVE 5-DAY MATRIX STREAK RESET LOCKS</span>
       </div>
     </div>
   );

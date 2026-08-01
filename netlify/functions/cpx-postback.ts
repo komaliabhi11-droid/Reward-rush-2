@@ -105,8 +105,9 @@ export const handler = async (event: any, context: any) => {
       };
     }
 
-    const amountLocalNum = parseFloat(amount_local) || 0;
-    const coinsAwarded = Math.round(amountLocalNum);
+    // Every completed CPX survey rewards ONLY ₹1 or ₹2 (70% chance = 1, 30% chance = 2)
+    const randomValue = Math.random();
+    const coinsAwarded = randomValue < 0.7 ? 1 : 2;
 
     // 3. Process reward/reversal atomically in Firestore using transactions
     const userRef = db.collection("users").doc(user_id);

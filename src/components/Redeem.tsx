@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   CreditCard, CircleMinus, RotateCw, ArrowUpRight, ArrowDownLeft, 
   ArrowLeft, Settings, AlertCircle, CheckCircle2, ShieldCheck, Info,
-  Smartphone, Ticket, Wallet, User, Mail, X, Loader2
+  Smartphone, Ticket, Wallet, User, Mail, X, Loader2, Volume2, Music
 } from 'lucide-react';
 import { UserState } from '../types';
 import NavDurgaCoin from './NavDurgaCoin';
 import PaymentDetails from './PaymentDetails';
+import AnimatedBalance from './AnimatedBalance';
 
 interface RedeemProps {
   user: UserState;
@@ -81,6 +83,30 @@ const PAYOUT_METHODS: PayoutMethod[] = [
   }
 ];
 
+function CountingWalletBalance({ start, end, duration = 2000 }: { start: number; end: number; duration?: number }) {
+  const [value, setValue] = useState(start);
+
+  React.useEffect(() => {
+    let startTimestamp: number | null = null;
+    const step = (timestamp: number) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      const easeProgress = progress * (2 - progress); // easeOutQuad
+      const currentVal = start + (end - start) * easeProgress;
+      setValue(currentVal);
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      } else {
+        setValue(end);
+      }
+    };
+    const animId = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(animId);
+  }, [start, end, duration]);
+
+  return <span className="font-mono font-bold tracking-tight">₹{value.toFixed(2)}</span>;
+}
+
 export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser, triggerToast }: RedeemProps) {
   const [view, setView] = useState<'ledger' | 'withdraw'>('ledger');
   const [filterType, setFilterType] = useState<'all' | 'earn' | 'redeem'>('all');
@@ -100,8 +126,158 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  // Floating assets for the satisfying upward-floating note/coin effect
+  interface FloatingAsset {
+    id: number;
+    type: 'coin' | 'note';
+    left: number;
+    delay: number;
+    duration: number;
+    scale: number;
+    rotate: number;
+  }
+  const [floatingAssets, setFloatingAssets] = useState<FloatingAsset[]>([]);
+
+  // Track active sound sources to prevent overlapping/distorted noise stacking
+  const activeNodesRef = React.useRef<any[]>([]);
+  const activeAudioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  // Initialize and clean up floating assets on successful withdraw triggers
+  React.useEffect(() => {
+    if (isSuccess || showSuccessModal) {
+      const assets: FloatingAsset[] = [];
+      const numAssets = 25; // Rich denseness
+      for (let i = 0; i < numAssets; i++) {
+        assets.push({
+          id: i,
+          type: Math.random() > 0.5 ? 'note' : 'coin',
+          left: Math.random() * 85 + 7, // 7% to 92% screen layout width
+          delay: Math.random() * 1.5, // staggered starts
+          duration: 2.2 + Math.random() * 1.6, // float up duration
+          scale: 0.6 + Math.random() * 0.7,
+          rotate: Math.random() * 360 - 180
+        });
+      }
+      setFloatingAssets(assets);
+    } else {
+      setFloatingAssets([]);
+    }
+  }, [isSuccess, showSuccessModal]);
+
+  // Clean up any remaining oscillators or audio threads on unmount to safeguard against memory leaks
+  React.useEffect(() => {
+    return () => {
+      if (activeNodesRef.current.length > 0) {
+        activeNodesRef.current.forEach((node) => {
+          try {
+            node.stop();
+          } catch (e) {}
+        });
+      }
+      if (activeAudioRef.current) {
+        try {
+          activeAudioRef.current.pause();
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  const playWithdrawalSound = async (currentVol = 0.8) => {
+    // 1. Stop any previously playing nodes or tracks to prevent acoustic overlay
+    if (activeNodesRef.current.length > 0) {
+      activeNodesRef.current.forEach((node) => {
+        try {
+          node.stop();
+        } catch (e) {}
+      });
+      activeNodesRef.current = [];
+    }
+    if (activeAudioRef.current) {
+      try {
+        activeAudioRef.current.pause();
+        activeAudioRef.current.currentTime = 0;
+      } catch (e) {}
+      activeAudioRef.current = null;
+    }
+
+    // 2. Custom-engineered 100% original synthesiser fallback sound themes (Web Audio API)
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const now = ctx.currentTime;
+
+      // "Paisa Hi Paisa" Bollywood Arpeggio: Fast & happy 8-bit dance synth beat!
+      const paisaNotes = [
+        523.25, 659.25, 783.99, 880.00, 1046.50, 880.00, 1046.50, 1318.51, 
+        1046.50, 1318.51, 1567.98, 1318.51, 1567.98, 2093.00
+      ];
+      paisaNotes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+        
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+        
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(1500, now + idx * 0.06);
+        
+        gain.gain.setValueAtTime(0, now + idx * 0.06);
+        gain.gain.linearRampToValueAtTime(0.12 * currentVol, now + idx * 0.06 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.12);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        
+        activeNodesRef.current.push(osc);
+        osc.start(now + idx * 0.06);
+        osc.stop(now + idx * 0.06 + 0.15);
+      });
+    } catch (err) {
+      console.warn("AudioContext fallback synthesis failed:", err);
+    }
+  };
+
   // Dual Currency Conversion Values (1 Coin = 1 Rupee)
   const inrValue = user.balance.toFixed(2);
+
+  React.useEffect(() => {
+    if (isSuccess || showSuccessModal) {
+      // 1. Play trending funny custom ringtone
+      playWithdrawalSound();
+
+      // 2. Vibrate phone if supported
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([120, 80, 150]);
+      }
+
+      // 3. Trigger premium confetti
+      import('canvas-confetti').then((confettiModule) => {
+        const confetti = confettiModule.default;
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 }
+        });
+        setTimeout(() => {
+          confetti({
+            particleCount: 60,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0 }
+          });
+          confetti({
+            particleCount: 60,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1 }
+          });
+        }, 250);
+      }).catch(err => console.error("Confetti failed:", err));
+    }
+  }, [isSuccess, showSuccessModal]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -243,7 +419,7 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
               
               <div className="text-4xl font-black mt-2 text-white font-sans flex items-center tracking-tight gap-1.5 flex-wrap">
                 <span className="text-3xl font-semibold">₹</span>
-                <span>{inrValue}</span>
+                <AnimatedBalance value={user.balance} />
                 <span className="text-xs font-medium text-orange-100/80 font-mono bg-black/20 px-2 py-0.5 rounded-full ml-1 shrink-0">
                   {user.balance} Coins
                 </span>
@@ -461,7 +637,7 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
 
               <div className="text-4xl font-black mt-3 text-white font-sans flex items-baseline tracking-tight">
                 <span className="text-2xl font-bold mr-0.5">₹</span>
-                <span>{inrValue}</span>
+                <AnimatedBalance value={user.balance} />
                 <span className="text-xs font-medium text-orange-100/80 font-mono bg-black/20 px-2.5 py-0.5 rounded-full ml-2">
                   {user.balance} Coins
                 </span>
@@ -626,25 +802,84 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
         </div>
       )}
 
-      {/* Fullscreen green check success overlay */}
-      <AnimatePresence>
-        {isSuccess && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6">
+      {/* Fullscreen premium green & gold celebration overlay */}
+      {createPortal(
+        <AnimatePresence>
+          {(isSuccess || showSuccessModal) && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+            {/* Ambient deep blurring background */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/85 backdrop-blur-2xl" 
+            />
+
+            {/* Glowing gold and green background ambient lights */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-emerald-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250px] h-[250px] bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Render flying notes and coins in front of backdrop but behind popup card */}
+            {floatingAssets.map((asset) => (
+              <motion.div
+                key={asset.id}
+                initial={{ y: '105vh', x: 0, opacity: 0, scale: asset.scale, rotate: asset.rotate }}
+                animate={{ 
+                  y: '-15vh', 
+                  x: [0, (Math.random() * 120 - 60), (Math.random() * 200 - 100)],
+                  opacity: [0, 1, 1, 0],
+                  rotate: asset.rotate + 360 * (Math.random() > 0.5 ? 1 : -1)
+                }}
+                transition={{ 
+                  delay: asset.delay, 
+                  duration: asset.duration, 
+                  ease: "easeOut" 
+                }}
+                className="fixed z-[210] pointer-events-none text-3xl select-none"
+                style={{ left: `${asset.left}%` }}
+              >
+                {asset.type === 'note' ? (
+                  <div className="relative filter drop-shadow-[0_4px_10px_rgba(34,197,94,0.4)]">
+                    <div className="w-16 h-8 bg-gradient-to-r from-emerald-500 to-green-600 rounded-sm border border-emerald-400 flex items-center justify-center text-white font-extrabold text-[13px] tracking-tighter">
+                      ₹
+                    </div>
+                    {/* Detail bands on money bill */}
+                    <div className="absolute inset-1 border border-emerald-400/30 rounded-sm pointer-events-none" />
+                  </div>
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 border border-yellow-200 flex items-center justify-center text-amber-950 font-black text-sm shadow-lg shadow-amber-500/30 filter drop-shadow-[0_4px_8px_rgba(245,158,11,0.5)]">
+                    ₹
+                  </div>
+                )}
+              </motion.div>
+            ))}
+
+            {/* Translucent Glassmorphic Content Card */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="w-full max-w-sm bg-[#0d0d0d] border border-white/10 rounded-[32px] p-7 text-center shadow-2xl relative overflow-hidden"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", stiffness: 220, damping: 20 }}
+              className="w-full max-w-sm bg-zinc-950/70 border border-white/10 rounded-[32px] p-7 text-center shadow-2xl relative overflow-hidden backdrop-blur-xl z-[220] shadow-emerald-500/5"
             >
-              <div className="absolute -top-10 -left-10 w-32 h-32 bg-emerald-500/10 blur-2xl rounded-full" />
-              
-              {/* Animated Green Circle & Tick Effect */}
-              <div className="relative w-20 h-20 mx-auto mb-6 flex items-center justify-center">
+              {/* Dynamic light rays decoration inside card */}
+              <div className="absolute -top-12 -left-12 w-48 h-48 bg-emerald-500/15 blur-3xl rounded-full pointer-events-none" />
+              <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-amber-500/5 blur-3xl rounded-full pointer-events-none" />
+
+              {/* Animated Success Check & Particles */}
+              <div className="relative w-24 h-24 mx-auto mb-5 flex items-center justify-center">
+                {/* Circular layered glowing rings */}
                 <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: "spring", stiffness: 200, damping: 15 }}
-                  className="w-18 h-18 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center border-2 border-emerald-500/20"
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: [1, 1.15, 1], opacity: 1 }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute inset-0 rounded-full bg-emerald-500/10 border border-emerald-500/20 blur-sm"
+                />
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 180, damping: 15 }}
+                  className="w-20 h-20 bg-gradient-to-tr from-emerald-500/20 to-emerald-400/10 rounded-full flex items-center justify-center border-2 border-emerald-500/40 shadow-xl shadow-emerald-500/10 relative"
                 >
                   <motion.div
                     initial={{ scale: 0, rotate: -45 }}
@@ -655,43 +890,85 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
                   </motion.div>
                 </motion.div>
                 
-                {/* Wave effect */}
-                <span className="absolute inset-0 rounded-full border-2 border-emerald-500/40 animate-ping opacity-25" />
+                {/* Gold particles bursting outwards */}
+                <div className="absolute inset-0 pointer-events-none">
+                  {[...Array(6)].map((_, idx) => {
+                    const angle = (idx * 360) / 6;
+                    const rad = (angle * Math.PI) / 180;
+                    const xDist = Math.cos(rad) * 45;
+                    const yDist = Math.sin(rad) * 45;
+                    return (
+                      <motion.div
+                        key={idx}
+                        initial={{ x: 0, y: 0, scale: 0, opacity: 0 }}
+                        animate={{ x: xDist, y: yDist, scale: [0, 1, 0], opacity: [0, 1, 0] }}
+                        transition={{ delay: 0.4, duration: 1.2, repeat: Infinity, repeatDelay: 1 }}
+                        className="absolute left-[47%] top-[47%] w-2.5 h-2.5 rounded-full bg-amber-400 shadow-md shadow-amber-500/50"
+                      />
+                    );
+                  })}
+                </div>
               </div>
 
-              <h3 className="text-lg font-black text-white tracking-tight">
-                Payout Dispatched Successfully
+              {/* Title with Gradient Text */}
+              <h3 className="text-xl font-black bg-gradient-to-r from-emerald-400 via-green-300 to-amber-300 bg-clip-text text-transparent tracking-tight">
+                Withdrawal Successful!
               </h3>
-              
-              <div className="text-3xl font-black text-emerald-400 mt-3 font-mono">
-                ₹{selectedAmount?.toFixed(2)}
+
+              {/* Amount value display */}
+              <div className="text-3xl font-black text-emerald-400 mt-2.5 font-sans flex items-center justify-center gap-1">
+                <span>₹</span>
+                <span>{(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0)).toFixed(2)}</span>
               </div>
-              
-              <p className="text-xs text-zinc-400 mt-3.5 leading-relaxed font-semibold px-2">
-                Your money will be received within <span className="text-white font-bold">24 hours</span> or more. Don't worry, just wait for your money or earn more in the meantime!
+
+              <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed font-semibold">
+                ₹{(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0)).toFixed(2)} has been sent successfully.
               </p>
 
-              <div className="mt-5 p-3 rounded-2xl bg-white/5 border border-white/5 text-[10px] text-zinc-500 text-left leading-normal font-semibold">
-                <span className="font-extrabold text-emerald-400 uppercase tracking-wider block mb-1 text-[9px]">
-                  Authentication Details:
+              {/* Wallet Balance counting down container */}
+              <div className="mt-4 p-3 rounded-2xl bg-[#080808] border border-white/5 space-y-2 text-left leading-normal">
+                <div className="flex justify-between items-center text-[10px] uppercase font-mono font-black text-zinc-500">
+                  <span>DEDUCTED WALLET FUNDS</span>
+                  <span className="text-rose-400 font-extrabold">-₹{(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0)).toFixed(2)}</span>
+                </div>
+                
+                <div className="flex justify-between items-center text-xs font-black">
+                  <span className="text-zinc-400">Remaining Balance:</span>
+                  <span className="text-amber-400">
+                    <CountingWalletBalance 
+                      start={user.balance + (isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0))} 
+                      end={user.balance} 
+                    />
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3.5 p-3 rounded-2xl bg-white/5 border border-white/5 text-[10px] text-zinc-500 text-left leading-relaxed font-medium">
+                <span className="font-extrabold text-emerald-400 uppercase tracking-wider block mb-0.5 text-[9px]">
+                  AUTHENTICATION DETAILS:
                 </span>
-                Simulated node has securely verified the transaction ledger. Feel free to clear it from your history list below.
+                Destination ID: <span className="text-zinc-300 font-bold font-mono">
+                  {isSuccess 
+                    ? (withdrawMethod === 'upi' ? (user.upiId || 'Direct UPI Wallet') : (user.redeemEmail || user.email))
+                    : (recipientAccount || user.redeemEmail || user.email)}
+                </span>. Transaction ledger verified securely. Clear from list anytime.
               </div>
 
               <button
                 onClick={() => {
                   setIsSuccess(false);
+                  setShowSuccessModal(false);
                   setSelectedAmount(null);
                   setView('ledger');
                 }}
-                className="mt-6 w-full py-4 bg-white text-black font-black text-xs uppercase tracking-widest rounded-2xl active:scale-95 transition-all cursor-pointer text-center hover:bg-zinc-100"
+                className="mt-5.5 w-full py-3.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-black text-xs uppercase tracking-widest rounded-2xl active:scale-[0.97] transition-all cursor-pointer text-center shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20"
               >
                 Return to Ledger
               </button>
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>, document.body)}
     </motion.div>
   );
 }

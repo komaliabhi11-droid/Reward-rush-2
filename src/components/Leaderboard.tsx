@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { UserState } from '../types';
 import { auth } from '../lib/firebase';
+import { useUnityAds } from './UnityAdsProvider';
 
 interface LeaderboardProps {
   user: UserState;
@@ -82,6 +83,8 @@ export default function Leaderboard({
   const isOled = themeMode === 'oled';
   const cardBg = isOled ? 'bg-zinc-950/60 backdrop-blur-xl border-white/10' : 'bg-[#0f172a]/60 backdrop-blur-xl border-slate-800';
 
+  const { setIsFillingSurvey } = useUnityAds();
+
   // State for active survey simulation
   const [activeSurvey, setActiveSurvey] = useState<SurveyPartner | null>(null);
   const [surveyStep, setSurveyStep] = useState(0);
@@ -92,6 +95,11 @@ export default function Leaderboard({
   const [showCpxOfferwall, setShowCpxOfferwall] = useState(false);
   const [cpxLoading, setCpxLoading] = useState(true);
   const [cpxError, setCpxError] = useState(false);
+
+  // Synchronize survey activity state with global Unity Ads safety controller
+  useEffect(() => {
+    setIsFillingSurvey(activeSurvey !== null || showCpxOfferwall);
+  }, [activeSurvey, showCpxOfferwall, setIsFillingSurvey]);
   const [cpxUrl, setCpxUrl] = useState<string>('');
 
   // Handle opening CPX in a new tab helper
