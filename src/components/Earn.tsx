@@ -37,6 +37,99 @@ export default function Earn({ tasks, onCompleteTask, user, triggerToast }: Earn
       }
     }
   }, [totalRewardedAds, onCompleteTask, triggerToast]);
+
+  // Weekly Challenge states for watching 25 ads to get record (weekly twice limit)
+  const [weeklyAdsWatched, setWeeklyAdsWatched] = useState<number>(() => {
+    return parseInt(localStorage.getItem('weekly_challenge_ads_watched') || '0', 10);
+  });
+  const [weeklyCompletions, setWeeklyCompletions] = useState<number>(() => {
+    return parseInt(localStorage.getItem('weekly_challenge_completions') || '0', 10);
+  });
+  const [lastResetTime, setLastResetTime] = useState<number>(() => {
+    const saved = localStorage.getItem('weekly_challenge_last_reset');
+    if (!saved) {
+      const now = Date.now();
+      localStorage.setItem('weekly_challenge_last_reset', now.toString());
+      return now;
+    }
+    return parseInt(saved, 10);
+  });
+
+  // Reset weekly limits automatically after 7 days
+  useEffect(() => {
+    const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    if (now - lastResetTime >= oneWeekMs) {
+      setWeeklyCompletions(0);
+      setWeeklyAdsWatched(0);
+      setLastResetTime(now);
+      localStorage.setItem('weekly_challenge_completions', '0');
+      localStorage.setItem('weekly_challenge_ads_watched', '0');
+      localStorage.setItem('weekly_challenge_last_reset', now.toString());
+    }
+  }, [lastResetTime]);
+
+  const handleWatchChallengeAd = () => {
+    if (weeklyCompletions >= 2) {
+      triggerToast('Weekly limit reached! You can complete this challenge twice a week.');
+      return;
+    }
+
+    showRewardedAd(() => {
+      setWeeklyAdsWatched((prev) => {
+        const next = Math.min(prev + 1, 25);
+        localStorage.setItem('weekly_challenge_ads_watched', next.toString());
+        triggerToast(`Successfully watched ad! Progress: ${next}/25`, 0);
+        return next;
+      });
+    });
+  };
+
+  const handleClaimWeeklyRecord = () => {
+    if (weeklyAdsWatched < 25) {
+      triggerToast('Please watch 25 ads first to claim your record!');
+      return;
+    }
+    if (weeklyCompletions >= 2) {
+      triggerToast('Weekly limit reached! Maximum 2 times per week.');
+      return;
+    }
+
+    const rewardCash = 25.00;
+    const bonusSpins = 2;
+    const completionNumber = weeklyCompletions + 1;
+    const txId = `tx-weekly-challenge-${completionNumber}-${Date.now()}`;
+
+    onCompleteTask(
+      txId, 
+      rewardCash, 
+      `Weekly Ads Milestone Record [${completionNumber}/2]`, 
+      'completed', 
+      bonusSpins
+    );
+
+    const nextCompletions = weeklyCompletions + 1;
+    setWeeklyCompletions(nextCompletions);
+    setWeeklyAdsWatched(0);
+    localStorage.setItem('weekly_challenge_completions', nextCompletions.toString());
+    localStorage.setItem('weekly_challenge_ads_watched', '0');
+
+    triggerToast(`Successfully! Unlocked Weekly Record #${completionNumber}: +₹${rewardCash.toFixed(2)} & +${bonusSpins} Spins!`, rewardCash);
+  };
+
+  const getRemainingTimeStr = () => {
+    const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+    const elapsed = Date.now() - lastResetTime;
+    const remainingMs = Math.max(0, oneWeekMs - elapsed);
+    
+    const days = Math.floor(remainingMs / (24 * 60 * 60 * 1000));
+    const hours = Math.floor((remainingMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+    
+    if (days > 0) {
+      return `${days}d ${hours}h remaining`;
+    }
+    return `${hours}h remaining`;
+  };
   
   // Local states for offer completions
   const [adCompleted, setAdCompleted] = useState(() => localStorage.getItem('adreward_offer_ad_done') === 'true');
@@ -191,97 +284,77 @@ export default function Earn({ tasks, onCompleteTask, user, triggerToast }: Earn
 
       {/* Offers Card List */}
       <div className="flex flex-col gap-3.5">
-        {/* Unity Ads Milestones Tracker */}
-        <div className="p-5 rounded-[24px] bg-gradient-to-br from-zinc-900/95 via-zinc-950/98 to-zinc-900/95 border border-white/5 relative overflow-hidden shadow-xl">
+        {/* Weekly Ad Challenge Card (Watch 25 Ads, Weekly Twice Limit) */}
+        <div className="p-5 rounded-[24px] bg-gradient-to-br from-zinc-900/95 via-zinc-950/98 to-zinc-900/95 border border-amber-500/20 relative overflow-hidden shadow-xl">
           <div className="absolute top-0 right-0 p-1 px-3 bg-amber-500/10 text-amber-500 text-[8px] font-black uppercase tracking-widest rounded-bl-xl border-l border-b border-white/5">
-            Active Milestone
+            Weekly Challenge
           </div>
           
           <div className="flex flex-col gap-3">
-            <h4 className="text-[13px] font-black text-white uppercase tracking-wider flex items-center gap-2">
+            <h4 className="text-[14px] font-black text-white uppercase tracking-wider flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
-              Unity Ad Milestones
+              Special Weekly Ad Challenge
             </h4>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Earn automatic bonus Lucky Spins! Reach checkpoints to secure your reward.
+              Watch a total of 25 short video ads to claim a premium record reward of <span className="text-amber-500 font-extrabold">₹25.00 cash + 2 Lucky Spins</span>. This challenge can be completed only twice a week!
             </p>
+
+            {/* Completion Count Badges */}
+            <div className="flex gap-2">
+              <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border ${weeklyCompletions >= 1 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-extrabold' : 'bg-white/5 border-white/10 text-zinc-500 font-medium'}`}>
+                Record 1: {weeklyCompletions >= 1 ? 'Claimed ✓' : 'Available'}
+              </span>
+              <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border ${weeklyCompletions >= 2 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-extrabold' : 'bg-white/5 border-white/10 text-zinc-500 font-medium'}`}>
+                Record 2: {weeklyCompletions >= 2 ? 'Claimed ✓' : 'Available'}
+              </span>
+            </div>
 
             {/* Progress Bar Container */}
             <div className="space-y-2 mt-1">
               <div className="flex items-center justify-between text-[10px] font-mono font-bold text-zinc-500">
-                <span>ADS WATCHED: <span className="text-amber-500">{totalRewardedAds}</span></span>
-                <span>GOAL: 30 ADS</span>
+                <span>PROGRESS: <span className="text-amber-500 font-black">{weeklyAdsWatched}/25 ADS</span></span>
+                <span>{getRemainingTimeStr()}</span>
               </div>
               
               <div className="w-full h-3 bg-zinc-900/80 border border-white/5 rounded-full overflow-hidden relative p-0.5">
-                {/* 15 Ad Checkpoint tick marker */}
-                <div 
-                  className="absolute top-0 bottom-0 w-0.5 bg-zinc-800 z-10" 
-                  style={{ left: '50%' }}
-                />
                 <motion.div
                   className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full"
                   initial={{ width: 0 }}
-                  animate={{ width: `${Math.min((totalRewardedAds / 30) * 100, 100)}%` }}
+                  animate={{ width: `${Math.min((weeklyAdsWatched / 25) * 100, 100)}%` }}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 />
               </div>
-
-              <div className="flex items-center justify-between text-[9px] font-mono text-zinc-500">
-                <span className="font-bold">0 ADS</span>
-                <span className={`${totalRewardedAds >= 15 ? "text-amber-500 font-extrabold" : "font-bold"}`}>
-                  15 ADS {totalRewardedAds >= 15 ? '✓' : '(1 SPIN)'}
-                </span>
-                <span className={`${totalRewardedAds >= 30 ? "text-orange-500 font-extrabold" : "font-bold"}`}>
-                  30 ADS {totalRewardedAds >= 30 ? '✓' : '(2 SPINS)'}
-                </span>
-              </div>
             </div>
 
-            {/* Dynamic visual status descriptor */}
-            <div className="mt-1 p-3 rounded-2xl bg-white/[0.03] border border-white/5 text-[11px] font-bold text-zinc-300 flex items-center gap-2.5">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-              </span>
-              <span>
-                {totalRewardedAds < 15 ? (
-                  <>Watch <span className="text-amber-500">{15 - totalRewardedAds}</span> more ads to unlock <span className="text-white">1 Lucky Spin</span>!</>
-                ) : totalRewardedAds < 30 ? (
-                  <>Successfully got 1 Spin! Watch <span className="text-amber-500">{30 - totalRewardedAds}</span> more ads to unlock <span className="text-white">2 Lucky Spins</span>!</>
-                ) : (
-                  <span className="text-emerald-500">Successfully unlocked all milestone bonuses! You earned 3 Spins!</span>
-                )}
-              </span>
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-2.5 mt-1">
+              {weeklyCompletions >= 2 ? (
+                <div className="w-full py-3 rounded-xl bg-zinc-800/40 border border-white/5 text-center text-[11px] font-black text-zinc-500 uppercase tracking-widest">
+                  Limit Reached: Completed 2/2 This Week
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={handleWatchChallengeAd}
+                    className="flex-1 py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-black text-[11px] uppercase tracking-widest text-center cursor-pointer active:scale-95 transition-all shadow-md shadow-amber-500/10"
+                  >
+                    Watch Ad (+1 Progress)
+                  </button>
+                  <button
+                    onClick={handleClaimWeeklyRecord}
+                    disabled={weeklyAdsWatched < 25}
+                    className={`flex-1 py-3 px-4 rounded-xl font-black text-[11px] uppercase tracking-widest text-center transition-all ${
+                      weeklyAdsWatched >= 25 
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white cursor-pointer active:scale-95 shadow-md shadow-emerald-500/20' 
+                        : 'bg-zinc-800 text-zinc-600 cursor-not-allowed border border-white/5'
+                    }`}
+                  >
+                    Claim ₹25.00 Record
+                  </button>
+                </>
+              )}
             </div>
           </div>
-        </div>
-
-        {/* Unity Premium Rewarded Ad */}
-        <div className="p-5 rounded-[24px] bg-gradient-to-r from-zinc-900/95 to-amber-950/20 backdrop-blur-xl border border-amber-500/20 flex items-center justify-between relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-1 bg-amber-500 text-black text-[7px] font-black uppercase tracking-widest rounded-bl-lg">
-            Unity Ads
-          </div>
-          <div className="flex flex-col gap-1 z-10">
-            <h4 className="text-[15px] font-black text-white flex items-center gap-1.5">
-              Watch Ad & Earn ₹1
-            </h4>
-            <p className="text-[11px] text-amber-500 font-extrabold uppercase tracking-wider">
-              Earn ₹1.00 Instant Cash
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              showRewardedAd(() => {
-                const txId = `tx-unity-reward-${Date.now()}`;
-                onCompleteTask(txId, 1.00, 'Unity Rewarded Ad: Earned ₹1.00', 'completed');
-                triggerToast('Earned ₹1.00 from Unity Rewarded Ad!', 1.00);
-              });
-            }}
-            className="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-black font-black text-[11px] uppercase tracking-widest text-center cursor-pointer active:scale-95 transition-all shadow-md shadow-amber-500/10 z-10"
-          >
-            Watch & Earn
-          </button>
         </div>
 
         {/* Ad Offer */}

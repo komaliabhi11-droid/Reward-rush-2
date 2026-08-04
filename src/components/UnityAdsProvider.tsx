@@ -107,13 +107,7 @@ export const UnityAdsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const incrementSurveyCount = () => {
     setSurveyCount((prev) => {
       const next = prev + 1;
-      console.log(`[Unity Ads Tracker] Survey completed count: ${next}/3`);
-      if (next >= 3) {
-        // Automatically attempt to show interstitial after the active view finishes
-        setTimeout(() => {
-          showInterstitialAd();
-        }, 100);
-      }
+      console.log(`[Unity Ads Tracker] Survey completed count: ${next}/3 (Interstitial Triggers temporarily disabled)`);
       return next;
     });
   };
@@ -121,12 +115,7 @@ export const UnityAdsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const incrementNavigationCount = () => {
     setNavigationCount((prev) => {
       const next = prev + 1;
-      console.log(`[Unity Ads Tracker] Page navigation count: ${next}/5`);
-      if (next >= 5) {
-        setTimeout(() => {
-          showInterstitialAd();
-        }, 100);
-      }
+      console.log(`[Unity Ads Tracker] Page navigation count: ${next}/5 (Interstitial Triggers temporarily disabled)`);
       return next;
     });
   };

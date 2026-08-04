@@ -794,8 +794,8 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        {/* Render Unity Banner Ad only if logged in */}
-        {isLoggedIn && (
+        {/* Render Unity Banner Ad only if logged in (Temporarily Disabled as requested) */}
+        {isLoggedIn && false && (
           <UnityBannerAd activeTab={activeTab} />
         )}
 
