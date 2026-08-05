@@ -9,7 +9,7 @@ import PaymentDetails from './PaymentDetails';
 
 export const PRESET_AVATARS = [
   { id: 'user-0', name: 'Beta Tester', icon: User, gradient: 'from-amber-500 to-yellow-400', textColor: 'text-amber-400', bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20' },
-  { id: 'user-1', name: 'Diamond Hands', icon: Trophy, gradient: 'from-purple-500 to-indigo-500', textColor: 'text-purple-400', bgColor: 'bg-purple-500/10', borderColor: 'border-purple-500/20' },
+  { id: 'user-1', name: 'Diamond Hands', icon: Trophy, gradient: 'from-amber-600 to-orange-500', textColor: 'text-amber-500', bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20' },
   { id: 'user-2', name: 'Streak Master', icon: Flame, gradient: 'from-rose-500 to-orange-500', textColor: 'text-rose-400', bgColor: 'bg-rose-500/10', borderColor: 'border-rose-500/20' },
   { id: 'user-3', name: 'Ad Speedrunner', icon: Zap, gradient: 'from-blue-500 to-cyan-500', textColor: 'text-blue-400', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500/20' },
   { id: 'user-4', name: 'Coin King', icon: Coins, gradient: 'from-yellow-500 to-amber-600', textColor: 'text-yellow-400', bgColor: 'bg-yellow-500/10', borderColor: 'border-yellow-500/20' },

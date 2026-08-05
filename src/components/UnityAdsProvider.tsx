@@ -53,7 +53,7 @@ const AD_PLAYERS_POOL = [
   {
     title: "Ludo Empire Pro",
     description: "India's highest rated skill-based board game. Roll the dice, strategy-check your opponents, and withdraw real cash rewards securely.",
-    cta: "Claim ₹10 Signup Bonus",
+    cta: "Claim 1000 Coins Signup Bonus",
     rating: "4.9 ★",
     accent: "from-emerald-600 to-teal-500",
   }
@@ -434,7 +434,7 @@ export const UnityAdsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-2 z-10">
                 <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
                   <span>PLAYING SPONSORED MEDIA</span>
-                  <span>{adType === 'rewarded' ? '₹1.00 REWARD SECURED' : 'AD SPONSORSHIP'}</span>
+                  <span>{adType === 'rewarded' ? '100 COINS REWARD SECURED' : 'AD SPONSORSHIP'}</span>
                 </div>
                 <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
                   <motion.div
@@ -468,7 +468,7 @@ export const UnityAdsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                       Skip Reward?
                     </h4>
                     <p className="text-[11px] text-zinc-400 leading-relaxed mb-6">
-                      If you close this advertisement now, you will lose your chance to earn <b>₹1.00</b>. Are you sure?
+                      If you close this advertisement now, you will lose your chance to earn <b>100 Coins</b>. Are you sure?
                     </p>
                     <div className="flex gap-3">
                       <button

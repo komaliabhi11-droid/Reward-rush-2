@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Play, Download, CheckSquare, Dices, Layers, Loader2, Sparkles } from 'lucide-react';
 import { TaskItem, UserState } from '../types';
 import SpinWheel from './SpinWheel';
+import { formatINR } from '../lib/currency';
 import { useUnityAds } from './UnityAdsProvider';
 
 interface EarnProps {
@@ -95,7 +96,7 @@ export default function Earn({ tasks, onCompleteTask, user, triggerToast }: Earn
       return;
     }
 
-    const rewardCash = 25.00;
+    const rewardCash = 25; // 25 Coins = ₹25
     const bonusSpins = 2;
     const completionNumber = weeklyCompletions + 1;
     const txId = `tx-weekly-challenge-${completionNumber}-${Date.now()}`;
@@ -114,7 +115,7 @@ export default function Earn({ tasks, onCompleteTask, user, triggerToast }: Earn
     localStorage.setItem('weekly_challenge_completions', nextCompletions.toString());
     localStorage.setItem('weekly_challenge_ads_watched', '0');
 
-    triggerToast(`Successfully! Unlocked Weekly Record #${completionNumber}: +₹${rewardCash.toFixed(2)} & +${bonusSpins} Spins!`, rewardCash);
+    triggerToast(`Successfully! Unlocked Weekly Record #${completionNumber}: +₹${formatINR(rewardCash)} & +${bonusSpins} Spins!`, rewardCash);
   };
 
   const getRemainingTimeStr = () => {
@@ -246,7 +247,7 @@ export default function Earn({ tasks, onCompleteTask, user, triggerToast }: Earn
   const handleSpinResult = (rewardCoins: number) => {
     // Deduct 1 spin and award the coins!
     onCompleteTask('tx-spin-reward-' + Date.now(), rewardCoins, `Spin wheel reward - ${rewardCoins}`, 'completed', -1);
-    triggerToast(`Won ₹${rewardCoins.toFixed(2)} from spin!`, rewardCoins);
+    triggerToast(`Won ₹${formatINR(rewardCoins)} from spin!`, rewardCoins);
   };
 
   return (

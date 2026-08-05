@@ -233,6 +233,133 @@ async function startServer() {
     }
   });
 
+  // Secure PubScale Postback Endpoint
+  app.all("/api/pubscale-postback", async (req, res) => {
+    try {
+      // PubScale parameters can come in query (GET) or body (POST)
+      const user_id = (req.query.user_id || req.body.user_id) as string;
+      const value = (req.query.value || req.body.value) as string;
+      const token = (req.query.token || req.body.token) as string;
+      const signature = (req.query.signature || req.body.signature) as string;
+
+      console.log(`[PubScale Postback] Received user_id=${user_id}, value=${value}, token=${token}, signature=${signature}`);
+
+      // 1. Validate inputs
+      if (!user_id || !value || !token) {
+        console.warn("[PubScale Postback] Missing required fields: user_id, value, or token");
+        return res.status(400).send("Missing required parameters");
+      }
+
+      const coinsAwarded = Math.trunc(parseFloat(value));
+      if (isNaN(coinsAwarded) || coinsAwarded <= 0) {
+        console.warn(`[PubScale Postback] Invalid value parameter: ${value}`);
+        return res.status(400).send("Invalid reward value");
+      }
+
+      // 2. Validate signature if enabled
+      const pubscaleSecretKey = process.env.PUBSCALE_SECRET_KEY || "YOUR_PUBSCALE_SECRET_KEY";
+      const isSecureHashEnabled = process.env.PUBSCALE_SECURITY_HASH_ENABLED === "true";
+      const isPlaceholder = !pubscaleSecretKey || pubscaleSecretKey === "YOUR_PUBSCALE_SECRET_KEY" || pubscaleSecretKey.startsWith("YOUR_");
+
+      const shouldVerify = isSecureHashEnabled && !isPlaceholder;
+
+      if (shouldVerify) {
+        if (!signature) {
+          console.warn("[PubScale Postback] Missing signature for verification");
+          return res.status(400).send("Missing signature");
+        }
+        // Formula: md5(secret_key.user_id.int(value).token)
+        const input = `${pubscaleSecretKey}.${user_id}.${coinsAwarded}.${token}`;
+        const expectedHash = crypto.createHash("md5").update(input).digest("hex");
+
+        if (signature.toLowerCase() !== expectedHash.toLowerCase()) {
+          console.warn(`[PubScale Postback] Invalid signature. Received: ${signature.toLowerCase()}, Expected: ${expectedHash.toLowerCase()}`);
+          return res.status(403).send("Invalid signature hash");
+        }
+      } else {
+        console.log(`[PubScale Postback] Signature verification skipped (enabled=${isSecureHashEnabled}, isPlaceholder=${isPlaceholder})`);
+      }
+
+      // 3. Process reward/transaction atomically in Firestore using transactions
+      const userRef = db.collection("users").doc(user_id);
+      const offerRef = db.collection("offerHistory").doc("pubscale-" + token);
+
+      await db.runTransaction(async (transaction) => {
+        const userSnap = await transaction.get(userRef);
+        const offerSnap = await transaction.get(offerRef);
+
+        const userExists = userSnap.exists;
+        const offerExists = offerSnap.exists;
+
+        if (offerExists) {
+          console.log(`[PubScale Postback] Transaction ${token} has already been processed. Skipping duplicate reward.`);
+          return;
+        }
+
+        const offerData = {
+          uid: user_id,
+          offerId: "pubscale-survey",
+          transactionId: token,
+          amountLocal: value,
+          amountUSD: (parseFloat(value) / 83).toFixed(6), // 83 coins = $1 USD
+          coinsAwarded: coinsAwarded,
+          status: "completed",
+          completedAt: new Date().toISOString()
+        };
+
+        const ledgerItem = {
+          id: `tx-pubscale-${token}`,
+          title: "PubScale Complete Surveys Reward",
+          amount: coinsAwarded,
+          timestamp: new Date().toISOString(),
+          type: "earn",
+          status: "completed"
+        };
+
+        if (userExists) {
+          const userData = userSnap.data() || {};
+          const currentCoins = userData.coins || 0;
+          const currentTotalEarned = userData.totalEarned || 0;
+          const currentCompletedOffers = userData.completedOffers || 0;
+
+          transaction.update(userRef, {
+            coins: currentCoins + coinsAwarded,
+            totalEarned: currentTotalEarned + coinsAwarded,
+            completedOffers: currentCompletedOffers + 1,
+            lastReward: coinsAwarded,
+            history: FieldValue.arrayUnion(ledgerItem)
+          });
+        } else {
+          transaction.set(userRef, {
+            uid: user_id,
+            fullName: "Survey Explorer",
+            email: "pubscale-user-" + user_id + "@rewardrush.com",
+            profilePhoto: "user-0",
+            coins: coinsAwarded,
+            totalEarned: coinsAwarded,
+            totalWithdrawn: 0,
+            pendingWithdraw: 0,
+            completedOffers: 1,
+            lastReward: coinsAwarded,
+            joinedAt: new Date().toISOString(),
+            isAdmin: false,
+            isBanned: false,
+            history: [ledgerItem]
+          });
+        }
+
+        transaction.set(offerRef, offerData);
+        console.log(`[PubScale Postback DBG] Original PubScale value: ${value}, Final credited coin amount: ${coinsAwarded}`);
+        console.log(`[PubScale Postback] Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
+      });
+
+      return res.status(200).send("OK");
+    } catch (err: any) {
+      console.error("[PubScale Postback Error]:", err);
+      return res.status(500).send("Internal server error");
+    }
+  });
+
   // Serve static files or setup Vite in dev mode
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

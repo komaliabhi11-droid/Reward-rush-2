@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Check, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { UserState } from '../types';
+import { formatINR } from '../lib/currency';
 
 interface PaymentDetailsProps {
   user: UserState;
@@ -33,7 +34,7 @@ export default function PaymentDetails({
   const [error, setError] = useState('');
 
   // Dual Currency Conversion
-  const inrValue = user.balance.toFixed(2);
+  const inrValue = formatINR(user.balance);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +72,7 @@ export default function PaymentDetails({
       // If it is the actual Withdrawal tab, clicking Save & Update Details triggers withdrawal
       const minCoins = 100;
       if (user.balance < minCoins) {
-        setError(`Minimum balance required to withdraw is ₹${minCoins.toFixed(2)} (${minCoins} coins). Current balance: ₹${inrValue}`);
+        setError(`Minimum balance required to withdraw is ₹${formatINR(minCoins)} (${minCoins} coins). Current balance: ₹${inrValue}`);
         return;
       }
 

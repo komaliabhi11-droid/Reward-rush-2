@@ -12,7 +12,7 @@ const SPONSORS_POOL = [
     title: "Candy Crush Soda Saga",
     subtitle: "Slay puzzles with delicious sodas!",
     cta: "Play",
-    color: "from-purple-500 to-pink-500"
+    color: "from-amber-500 to-orange-500"
   },
   {
     title: "Raid: Shadow Legends",

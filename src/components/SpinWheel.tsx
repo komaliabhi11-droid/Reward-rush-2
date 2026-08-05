@@ -41,7 +41,7 @@ export default function SpinWheel({ userSpins, onSpinResult, triggerToast, spinC
     setIsSpinning(true);
 
     // Determine target reward based on how many times user has spun:
-    // Mostly ₹1 by default, but if they have done more spins, they get ₹2.
+    // Mostly ₹1 (1 coin) by default, but if they have done more spins, they get ₹2 (2 coins).
     let targetReward = 1;
     const rand = Math.random();
     if (spinCount < 2) {

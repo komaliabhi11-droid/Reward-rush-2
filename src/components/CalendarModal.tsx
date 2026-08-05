@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Calendar, X, Check, Clock, Award, Sparkles, Coins, Lock } from 'lucide-react';
 import { UserState } from '../types';
 
+import { formatINR } from '../lib/currency';
+
 interface CalendarModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -70,11 +72,11 @@ export default function CalendarModal({
 
   // Streak rewards list representing the values in Rupees
   const streakRewards = [
-    { day: 1, amount: 0.10, label: '₹0.10' },
-    { day: 2, amount: 0.20, label: '₹0.20' },
-    { day: 3, amount: 0.30, label: '₹0.30' },
-    { day: 4, amount: 0.40, label: '₹0.40' },
-    { day: 5, amount: 0.50, label: '₹0.50' }
+    { day: 1, amount: 10, label: '₹0.10' },
+    { day: 2, amount: 20, label: '₹0.20' },
+    { day: 3, amount: 30, label: '₹0.30' },
+    { day: 4, amount: 40, label: '₹0.40' },
+    { day: 5, amount: 50, label: '₹0.50' }
   ];
 
   const handleClaim = () => {

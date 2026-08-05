@@ -22,6 +22,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { mapFirestoreToUserState, mapUserStateToFirestore } from './lib/userMapping';
 import { handleFirestoreError, OperationType } from './lib/firestoreErrorHandler';
+import { formatINR } from './lib/currency';
 const STORAGE_LOGGED_KEY = 'adreward_logged_in_sim';
 const STORAGE_THEME_KEY = 'adreward_theme_mode_sim';
 const STORAGE_TASKS_KEY = 'adreward_tasks_data_sim';
@@ -363,8 +364,8 @@ export default function App() {
   const handleClaimDaily = async () => {
     const nowISO = new Date().toISOString();
     
-    // 5-day login streak rewards in Rupees (which is exactly equivalent to Coins: 1 Coin = ₹1)
-    const streakRewards = [0.10, 0.20, 0.30, 0.40, 0.50];
+    // 5-day login streak rewards in Coins (100 Coins = ₹1)
+    const streakRewards = [10, 20, 30, 40, 50];
     let currentStreak = user.dailyStreak;
 
     // Check if the user missed a day or if streak resets
@@ -401,7 +402,7 @@ export default function App() {
     ];
 
     await handleUpdateProfile({
-      balance: parseFloat((user.balance + rewardAmount).toFixed(2)),
+      balance: user.balance + rewardAmount,
       dailyStreak: nextDay,
       lastCheckIn: nowISO,
       history: newHistory
@@ -409,7 +410,7 @@ export default function App() {
 
     addNotification(
       'Daily Streak Claimed! 🔥',
-      `You successfully claimed your Day ${nextDay} streak reward of +₹${rewardAmount.toFixed(2)}!`,
+      `You successfully claimed your Day ${nextDay} streak reward of +₹${formatINR(rewardAmount)}!`,
       'streak'
     );
 
@@ -501,7 +502,7 @@ export default function App() {
     }
 
     await handleUpdateProfile({
-      balance: parseFloat((user.balance + reward).toFixed(2)), // correctly adds positive and subtracts negative values with floating point safety
+      balance: user.balance + reward, // correctly adds positive and subtracts negative values
       completedTasksCount: (isRedemption || exists) ? user.completedTasksCount : user.completedTasksCount + 1,
       spins: (user.spins !== undefined ? user.spins : 9) + (spinsChange || 0),
       history: updatedHistory
@@ -510,7 +511,7 @@ export default function App() {
     if (isRedemption) {
       addNotification(
         'Redemption Request Sent! 🏦',
-        `Dispatched payout request of ${absReward} Nav Durga Coins (₹${absReward.toFixed(2)} value). Status is pending.`,
+        `Dispatched payout request of ${absReward} Nav Durga Coins (₹${formatINR(absReward)} value). Status is pending.`,
         'redeem'
       );
       triggerToast('Redemption Request Dispatched!', absReward);
@@ -524,9 +525,9 @@ export default function App() {
           );
         } else if (taskId.startsWith('tx-spin-fee')) {
           addNotification(
-            'Lucky Wheel Entry Deducted',
+            "Lucky Wheel Entry Deducted",
             `Spent -${absReward} coins to spin the Lucky Wheel.`,
-            'game'
+            "game"
           );
         } else {
           addNotification(
@@ -552,8 +553,8 @@ export default function App() {
       
       {/* 
         Smartphone Frame Bezel Container
-        Max width container centered on desktop, takes up full viewport on mobile 
-      */}
+        Max width container centered on desktop, takes up full viewport on mobile
+       */}
       <div 
         className={`w-full max-w-md md:h-[844px] h-screen bg-zinc-950 md:rounded-[40px] md:border-[10px] md:border-zinc-800 shadow-[0_25px_60px_rgba(0,0,0,0.8)] relative flex flex-col overflow-hidden transition-all duration-500 ${
           themeMode === 'cool-gray' 
@@ -567,7 +568,6 @@ export default function App() {
           
           {/* Dynamic Speaker Notch Spacer for desktop presentation */}
           <div className="hidden md:block w-28 h-4.5 bg-black rounded-b-2xl absolute left-1/2 -translate-x-1/2 top-0" />
-
           <div className="flex items-center gap-2 text-zinc-300">
             <Signal className="w-3.5 h-3.5" />
             <Wifi className="w-3.5 h-3.5" />
@@ -607,81 +607,13 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Global Brand Header with Notification Center trigger */}
-        {isLoggedIn && (
-          <div className="flex flex-col shrink-0 bg-black z-40">
-            {/* Row 1: Title Bar with three-dot vertical menu */}
-            <div className="h-10 px-5 flex items-center justify-between border-b border-white/5 bg-zinc-950">
-              <span className="text-xs font-black tracking-wide text-zinc-100 font-mono">
-                Reward Rush - Premium Dashboard
-              </span>
-              <button 
-                onClick={() => {
-                  setThemeMode(prev => prev === 'oled' ? 'cool-gray' : 'oled');
-                  triggerToast(`Theme switched!`);
-                }}
-                className="text-zinc-400 hover:text-white p-1 text-xs font-mono transition-colors active:scale-95 cursor-pointer"
-                title="Switch Theme Accent"
-              >
-                More ⋮
-              </button>
-            </div>
-
-            {/* Row 2: Icons Row Bar with exact 3 columns */}
-            <div className="h-14 px-5 flex items-center justify-between border-b border-white/5 bg-zinc-950/60 backdrop-blur-md">
-              {/* Daily Streak calendar button */}
-              <button
-                onClick={() => {
-                  setIsCalendarOpen(prev => !prev);
-                }}
-                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all relative active:scale-90 cursor-pointer ${
-                  isCalendarOpen 
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-500 shadow-[0_0_10px_rgba(245,124,0,0.2)]' 
-                    : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
-                }`}
-                title="Daily Calendar Streak"
-              >
-                <Calendar className="w-4.5 h-4.5" />
-                {user.lastCheckIn !== new Date().toISOString().split('T')[0] && (
-                  <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                  </span>
-                )}
-              </button>
-
-              {/* AI Desk Pill Button */}
-              <button
-                onClick={() => setIsAiDeskOpen(true)}
-                className="flex items-center gap-1.5 px-6 py-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-zinc-200 transition-all active:scale-95 text-xs font-bold font-mono cursor-pointer"
-              >
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>🤖 AI Desk</span>
-              </button>
-
-              {/* Notification Bell Button */}
-              <button 
-                onClick={() => setShowNotifications(true)} 
-                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all relative active:scale-90 cursor-pointer"
-                title="Notifications"
-              >
-                <Bell className="w-4.5 h-4.5 text-zinc-300" />
-                {notifications.filter(n => !n.isRead).length > 0 && (
-                  <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
+        {/* Dynamic App Content Body */}
         {/* Dynamic App Content Body */}
         <div className={`flex-1 overflow-y-auto p-5 relative ${isLoggedIn && (activeTab === 'dashboard' || activeTab === 'redeem' || activeTab === 'profile') ? 'pb-24' : ''}`}>
           {firebaseError && (
             <div className="mb-4 p-4 rounded-xl border border-red-500/20 bg-red-950/40 text-red-200 text-xs leading-relaxed space-y-2 backdrop-blur-md">
               <div className="flex items-center gap-2 text-red-400 font-extrabold font-mono text-[10px] uppercase tracking-wider">
+
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                 <span>Firestore Connection Interrupted</span>
               </div>
@@ -744,12 +676,14 @@ export default function App() {
                 {activeTab === 'dashboard' && (
                   <Dashboard 
                     user={user} 
+                    uid={auth.currentUser?.uid}
                     onClaimDaily={handleClaimDaily} 
                     onOpenCalendar={() => setIsCalendarOpen(true)}
                     onOpenAiDesk={() => setIsAiDeskOpen(true)}
                     onOpenFaq={() => setIsFaqOpen(true)}
                     themeMode={themeMode}
                     onTabChange={handleTabChange}
+                    onRefreshUserData={handleRefreshUserData}
                   />
                 )}
                 {activeTab === 'earn' && (

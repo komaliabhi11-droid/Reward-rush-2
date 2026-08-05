@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { formatINR } from '../lib/currency';
 
 interface AnimatedBalanceProps {
   value: number;
@@ -27,7 +28,7 @@ export default function AnimatedBalance({ value }: AnimatedBalanceProps) {
       const easedProgress = easeOut(progress);
       
       const currentValue = startValue + (endValue - startValue) * easedProgress;
-      setDisplayValue(parseFloat(currentValue.toFixed(2)));
+      setDisplayValue(currentValue);
 
       if (progress < 1) {
         window.requestAnimationFrame(step);
@@ -41,5 +42,5 @@ export default function AnimatedBalance({ value }: AnimatedBalanceProps) {
     return () => window.cancelAnimationFrame(animationId);
   }, [value]);
 
-  return <span>{displayValue.toFixed(2)}</span>;
+  return <span>{formatINR(displayValue)}</span>;
 }

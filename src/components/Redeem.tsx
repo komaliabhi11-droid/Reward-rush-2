@@ -10,6 +10,7 @@ import { UserState } from '../types';
 import NavDurgaCoin from './NavDurgaCoin';
 import PaymentDetails from './PaymentDetails';
 import AnimatedBalance from './AnimatedBalance';
+import { formatINR } from '../lib/currency';
 
 interface RedeemProps {
   user: UserState;
@@ -55,7 +56,7 @@ const PAYOUT_METHODS: PayoutMethod[] = [
     placeholder: 'your-paypal@email.com',
     inputType: 'email',
     label: 'PayPal Registered Email Address',
-    colorClass: 'from-blue-600 to-indigo-700 text-white'
+    colorClass: 'from-blue-600 to-sky-700 text-white'
   },
   {
     id: 'amazon',
@@ -79,7 +80,7 @@ const PAYOUT_METHODS: PayoutMethod[] = [
     placeholder: 'delivery-email@gmail.com',
     inputType: 'email',
     label: 'Email to Dispatch Play Code',
-    colorClass: 'from-purple-600 to-pink-700 text-white'
+    colorClass: 'from-orange-500 to-amber-600 text-white'
   }
 ];
 
@@ -104,7 +105,7 @@ function CountingWalletBalance({ start, end, duration = 2000 }: { start: number;
     return () => window.cancelAnimationFrame(animId);
   }, [start, end, duration]);
 
-  return <span className="font-mono font-bold tracking-tight">₹{value.toFixed(2)}</span>;
+  return <span className="font-mono font-bold tracking-tight">₹{formatINR(value)}</span>;
 }
 
 export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser, triggerToast }: RedeemProps) {
@@ -240,8 +241,8 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
     }
   };
 
-  // Dual Currency Conversion Values (1 Coin = 1 Rupee)
-  const inrValue = user.balance.toFixed(2);
+  // Dual Currency Conversion Values (100 Coins = 1 Rupee)
+  const inrValue = formatINR(user.balance);
 
   React.useEffect(() => {
     if (isSuccess || showSuccessModal) {
@@ -295,7 +296,7 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
     }
 
     if (user.balance < selectedAmount) {
-      setError(`Insufficient balance. Minimum required is ₹${selectedAmount.toFixed(2)} (${selectedAmount} coins). Your current balance is ₹${inrValue}.`);
+      setError(`Insufficient balance. Minimum required is ₹${formatINR(selectedAmount)} (${selectedAmount} coins). Your current balance is ₹${inrValue}.`);
       return;
     }
 
@@ -530,7 +531,7 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
               ) : (
                 filteredHistory.map((tx) => {
                   const isDebit = tx.amount < 0;
-                  const displayInrAmount = Math.abs(tx.amount).toFixed(2);
+                  const displayInrAmount = formatINR(Math.abs(tx.amount));
 
                   return (
                     <div
@@ -574,7 +575,7 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
                       {/* Right-aligned Amount and Badge */}
                       <div className="flex flex-col items-end shrink-0">
                         <span className={`text-xs font-black font-mono ${isDebit ? 'text-rose-400' : 'text-emerald-400'}`}>
-                          {isDebit ? '-' : '+'}₹{displayInrAmount}
+                          {isDebit ? '-' : '+'}₹{formatINR(tx.amount)}
                         </span>
                         
                         {tx.status && (
@@ -918,18 +919,18 @@ export default function Redeem({ user, onCompleteTask, onTabChange, onUpdateUser
               {/* Amount value display */}
               <div className="text-3xl font-black text-emerald-400 mt-2.5 font-sans flex items-center justify-center gap-1">
                 <span>₹</span>
-                <span>{(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0)).toFixed(2)}</span>
+                <span>{formatINR(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0))}</span>
               </div>
 
               <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed font-semibold">
-                ₹{(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0)).toFixed(2)} has been sent successfully.
+                ₹{formatINR(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0))} has been sent successfully.
               </p>
 
               {/* Wallet Balance counting down container */}
               <div className="mt-4 p-3 rounded-2xl bg-[#080808] border border-white/5 space-y-2 text-left leading-normal">
                 <div className="flex justify-between items-center text-[10px] uppercase font-mono font-black text-zinc-500">
                   <span>DEDUCTED WALLET FUNDS</span>
-                  <span className="text-rose-400 font-extrabold">-₹{(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0)).toFixed(2)}</span>
+                  <span className="text-rose-400 font-extrabold">-₹{formatINR(isSuccess ? (selectedAmount || 0) : (selectedMethod.minCoins || 0))}</span>
                 </div>
                 
                 <div className="flex justify-between items-center text-xs font-black">

@@ -53,11 +53,11 @@ export default function AiDeskModal({
     const q = query.toLowerCase();
     
     if (q.includes('payout') || q.includes('redeem') || q.includes('withdraw') || q.includes('cashout')) {
-      return `All sandbox payouts are routed instantly via simulated RPC gateways. 💳\n\n• Processing speed: instant (0-2 hours)\n• Minimum withdrawal threshold: 100 Nav Durga Coins (₹100.00 value)\n• Methods available: Simulated PayPal, Paytm, UPI, and Amazon Voucher codes on the Logs/Redeem tabs!`;
+      return `All sandbox payouts are routed instantly via simulated RPC gateways. 💳\n\n• Processing speed: instant (0-2 hours)\n• Minimum withdrawal threshold: 10000 Nav Durga Coins (₹100.00 value)\n• Methods available: Simulated PayPal, Paytm, UPI, and Amazon Voucher codes on the Logs/Redeem tabs!`;
     }
     
     if (q.includes('spin') || q.includes('wheel') || q.includes('lucky')) {
-      return `The Lucky Wheel interactive minigame is located in the Offers tab! 🎡\n\n• Spinning cost: Free spin when earned via offers!\n• Maximum rewards: up to 2 Nav Durga Coins (₹2.00)!\n• Animation engine: physics-based simulated micro-interactions. Try a spin today!`;
+      return `The Lucky Wheel interactive minigame is located in the Offers tab! 🎡\n\n• Spinning cost: Free spin when earned via offers!\n• Maximum rewards: up to 200 Nav Durga Coins (₹2.00)!\n• Animation engine: physics-based simulated micro-interactions. Try a spin today!`;
     }
 
     if (q.includes('streak') || q.includes('checkin') || q.includes('calendar') || q.includes('daily')) {

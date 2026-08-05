@@ -28,11 +28,11 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     question: "How are Payouts processed?",
-    answer: "All payouts are routed instantly via simulated serverless RPC extractors. Once you hit the minimum 100 Nav Durga Coins (₹100.00 value), you can request Paytm, UPI, or PayPal transfers on the Logs/Redeem tabs. Transactions are fully simulated!"
+    answer: "All payouts are routed instantly via simulated serverless RPC extractors. Once you hit the minimum 10000 Nav Durga Coins (₹100.00 value), you can request Paytm, UPI, or PayPal transfers on the Logs/Redeem tabs. Transactions are fully simulated!"
   },
   {
     question: "What is the coin to currency conversion?",
-    answer: "Each Nav Durga Coin is equal to exactly ₹1.00 INR. The application operates strictly in a serverless simulated sandbox space for demonstration and developer iteration."
+    answer: "Every 100 Nav Durga Coins is equal to exactly ₹1.00 INR. The application operates strictly in a serverless simulated sandbox space for demonstration and developer iteration."
   }
 ];
 

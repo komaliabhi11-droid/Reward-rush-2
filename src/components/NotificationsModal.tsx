@@ -56,7 +56,7 @@ export default function NotificationsModal({
         );
       case 'game':
         return (
-          <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0">
             <Sparkles className="w-4.5 h-4.5 animate-pulse" />
           </div>
         );
