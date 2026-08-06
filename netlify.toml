@@ -6,6 +6,9 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+[functions."scheduled-notifications"]
+  schedule = "*/30 * * * *"
+
 # Proxy API calls to Netlify Serverless Functions
 [[redirects]]
   from = "/api/*"

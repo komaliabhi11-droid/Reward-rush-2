@@ -1,6 +1,7 @@
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import crypto from "crypto";
+import { sendPushNotification } from "../../src/lib/fcm-server";
 
 if (getApps().length === 0) {
   const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -182,6 +183,10 @@ export const handler = async (event: any, context: any) => {
 
         transaction.set(offerRef, offerData);
         console.log(`[Netlify CPX Postback] Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
+        
+        await sendPushNotification(user_id, "Coins Credited! 💸", `You earned +${coinsAwarded} coins from CPX Research!`).catch(err => {
+          console.error("[FCM CPX Netlify] Failed to send push notification:", err);
+        });
 
       } else if (status === "2") {
         // REVERSE REWARD

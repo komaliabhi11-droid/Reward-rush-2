@@ -32,6 +32,7 @@ export interface UserState {
   redeemEmail?: string;
   hasAddedPayoutDetails?: boolean;
   avatarUrl?: string;
+  fcmToken?: string;
 }
 
 export interface Transaction {

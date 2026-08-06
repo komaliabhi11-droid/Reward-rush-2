@@ -20,7 +20,8 @@ export function mapFirestoreToUserState(firebaseUser: any): UserState {
     pincode: firebaseUser.paymentDetails?.pincode || firebaseUser.pincode || '',
     redeemEmail: firebaseUser.paymentDetails?.redeemEmail || firebaseUser.redeemEmail || '',
     hasAddedPayoutDetails: firebaseUser.paymentDetails?.hasAddedPayoutDetails || firebaseUser.hasAddedPayoutDetails || false,
-    history: firebaseUser.history || []
+    history: firebaseUser.history || [],
+    fcmToken: firebaseUser.fcmToken || ''
   };
 }
 
@@ -45,6 +46,7 @@ export function mapUserStateToFirestore(user: UserState, uid: string) {
     completedTasksCount: user.completedTasksCount !== undefined ? user.completedTasksCount : 0,
     spins: user.spins !== undefined ? user.spins : 9,
     history: user.history || [],
+    fcmToken: user.fcmToken || '',
     paymentDetails: {
       upiId: user.upiId || '',
       addressLine1: user.addressLine1 || '',

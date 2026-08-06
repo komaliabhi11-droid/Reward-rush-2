@@ -23,6 +23,7 @@ import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { mapFirestoreToUserState, mapUserStateToFirestore } from './lib/userMapping';
 import { handleFirestoreError, OperationType } from './lib/firestoreErrorHandler';
 import { formatINR } from './lib/currency';
+import { triggerPushNotificationOnServer } from './lib/notifications';
 const STORAGE_LOGGED_KEY = 'adreward_logged_in_sim';
 const STORAGE_THEME_KEY = 'adreward_theme_mode_sim';
 const STORAGE_TASKS_KEY = 'adreward_tasks_data_sim';
@@ -416,6 +417,10 @@ export default function App() {
 
     triggerToast(`Day ${nextDay} Streak claimed!`, rewardAmount);
 
+    triggerPushNotificationOnServer('daily_login', rewardAmount).catch(err => {
+      console.error('[Server Push] Daily login notification error:', err);
+    });
+
     // Trigger premium confetti celebration on daily rewards
     import('canvas-confetti').then((confettiModule) => {
       confettiModule.default({
@@ -443,6 +448,10 @@ export default function App() {
       history: [newTx, ...user.history]
     });
 
+    triggerPushNotificationOnServer('reward_credited', amount).catch(err => {
+      console.error('[Server Push] Reward credit notification error:', err);
+    });
+
     addNotification(
       'AI Desk Verified Credit! 🎉',
       `Compliance document approved successfully! Credited +${amount} sandbox coins.`,
@@ -453,7 +462,13 @@ export default function App() {
   };
 
   // Complete Reward Tasks & Process Redemptions
-  const handleCompleteTask = async (taskId: string, reward: number, taskTitle: string, status?: 'pending' | 'completed', spinsChange?: number) => {
+  const handleCompleteTask = async (
+    taskId: string,
+    reward: number,
+    taskTitle: string,
+    status?: 'pending' | 'completed' | 'rejected',
+    spinsChange?: number
+  ) => {
     // Check if this is a newly completed survey to increment the Unity Interstitial trigger count
     const exists = user.history.some(tx => tx.id === taskId);
     const isRedemption = reward < 0;
@@ -515,6 +530,10 @@ export default function App() {
         'redeem'
       );
       triggerToast('Redemption Request Dispatched!', absReward);
+      
+      triggerPushNotificationOnServer('withdrawal_requested', absReward).catch(err => {
+        console.error('[Server Push] Withdrawal request notification error:', err);
+      });
     } else {
       if (reward > 0) {
         if (taskId.startsWith('tx-spin-reward')) {
@@ -537,6 +556,10 @@ export default function App() {
           );
         }
         triggerToast(`"${taskTitle}" completed!`, absReward);
+
+        triggerPushNotificationOnServer('reward_credited', absReward).catch(err => {
+          console.error('[Server Push] Reward credit notification error:', err);
+        });
       } else if (status === 'completed' && taskId.startsWith('tx-withdraw-')) {
         addNotification(
           'Withdrawal Approved! 💸',
@@ -544,6 +567,21 @@ export default function App() {
           'redeem'
         );
         triggerToast('Payout Completed!', 0);
+
+        triggerPushNotificationOnServer('withdrawal_approved', absReward).catch(err => {
+          console.error('[Server Push] Withdrawal approved notification error:', err);
+        });
+      } else if (status === 'rejected' && taskId.startsWith('tx-withdraw-')) {
+        addNotification(
+          'Withdrawal Rejected! ❌',
+          `Your payout for "${taskTitle}" has been rejected. Please review your details and try again.`,
+          'redeem'
+        );
+        triggerToast('Payout Rejected', 0);
+
+        triggerPushNotificationOnServer('withdrawal_rejected', absReward).catch(err => {
+          console.error('[Server Push] Withdrawal rejected notification error:', err);
+        });
       }
     }
   };

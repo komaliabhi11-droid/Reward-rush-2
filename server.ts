@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createServer as createViteServer } from "vite";
+import { sendPushNotification, sendScheduledNotifications } from "./src/lib/fcm-server";
 
 // Initialize Firebase Admin securely for backend operations
 if (getApps().length === 0) {
@@ -214,6 +215,10 @@ async function startServer() {
 
           transaction.set(offerRef, offerData);
           console.log(`[CPX Postback] Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
+          
+          sendPushNotification(user_id, "Coins Credited! 💸", `You earned +${coinsAwarded} coins from CPX Research!`).catch(err => {
+            console.error("[FCM CPX] Failed to send push notification:", err);
+          });
 
         } else if (status === "2") {
           // REVERSE REWARD
@@ -446,6 +451,10 @@ async function startServer() {
       console.log(`[PubScale Postback] Coins credited: Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
       await updateDebugInfo("success", payloadForLog, user_id, coinsAwarded, null);
 
+      sendPushNotification(user_id, "Coins Credited! 💸", `You earned +${coinsAwarded} coins from PubScale Surveys!`).catch(err => {
+        console.error("[FCM PubScale] Failed to send push notification:", err);
+      });
+
       return res.status(200).send("OK");
     } catch (err: any) {
       // Log: Any errors
@@ -494,6 +503,84 @@ async function startServer() {
       });
     }
   });
+
+  // 1. Send Notification API Endpoint
+  app.post(["/api/send-notification", "/.netlify/functions/send-notification"], async (req, res) => {
+    try {
+      const { userId, type, amount, title: customTitle, body: customBody } = req.body;
+
+      if (!userId || !type) {
+        return res.status(400).json({ error: "Missing required fields: userId and type are required." });
+      }
+
+      let title = "";
+      let body = "";
+
+      switch (type) {
+        case "reward_credited":
+          title = "Coins Credited! 💸";
+          body = `You earned +${amount || 0} coins! Your balance has been updated.`;
+          break;
+        case "withdrawal_requested":
+          title = "Withdrawal Dispatched! 🏦";
+          body = `Your request for ₹${amount || 0} has been securely logged and is pending approval.`;
+          break;
+        case "withdrawal_approved":
+          title = "Withdrawal Approved! 💸";
+          body = `Congratulations! Your payout of ₹${amount || 0} has been successfully completed!`;
+          break;
+        case "withdrawal_rejected":
+          title = "Withdrawal Rejected! ❌";
+          body = "Your withdrawal request has been rejected. Please review your details and try again.";
+          break;
+        case "daily_login":
+          title = "Daily Reward Claimed! 🔥";
+          body = `Your daily streak has been maintained! Credited +${amount || 0} coins.`;
+          break;
+        case "new_offers":
+          title = "New Offers Available! ⚡";
+          body = "Fresh surveys and high-paying offers are now active. Start earning!";
+          break;
+        case "test":
+          title = customTitle || "Test Push Notification";
+          body = customBody || "This is a real-time push notification test from Reward Rush!";
+          break;
+        default:
+          return res.status(400).json({ error: `Unsupported notification type: ${type}` });
+      }
+
+      console.log(`[Push API Server] Sending notification of type "${type}" to user ${userId}...`);
+      const sent = await sendPushNotification(userId, title, body, { type, amount: String(amount || 0) });
+
+      return res.status(200).json({ status: "success", sent, title, body });
+    } catch (err: any) {
+      console.error("[Push API Server Error]:", err);
+      return res.status(500).json({ error: err.message || String(err) });
+    }
+  });
+
+  // 2. Scheduled Notifications Trigger API Endpoint
+  app.all(["/api/scheduled-notifications", "/.netlify/functions/scheduled-notifications"], async (req, res) => {
+    try {
+      console.log("[Push API Server] Running scheduled notifications check manually...");
+      const result = await sendScheduledNotifications();
+      return res.status(200).json({ status: "success", result });
+    } catch (err: any) {
+      console.error("[Push API Server Scheduler Error]:", err);
+      return res.status(500).json({ error: err.message || String(err) });
+    }
+  });
+
+  // 3. Automated Server-Side Background Scheduler
+  // Check scheduled notifications every 10 minutes
+  setInterval(async () => {
+    try {
+      console.log("[Background Scheduler] Checking scheduled notifications...");
+      await sendScheduledNotifications();
+    } catch (err) {
+      console.error("[Background Scheduler Error]:", err);
+    }
+  }, 10 * 60 * 1000); // 10 minutes
 
   // Serve static files or setup Vite in dev mode
   if (process.env.NODE_ENV !== "production") {

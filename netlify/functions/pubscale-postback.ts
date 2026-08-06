@@ -1,6 +1,7 @@
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import crypto from "crypto";
+import { sendPushNotification } from "../../src/lib/fcm-server";
 
 if (getApps().length === 0) {
   const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -246,6 +247,10 @@ export const handler = async (event: any, context: any) => {
     // Log: Coins credited
     console.log(`[PubScale Postback] Coins credited: Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
     await updateDebugInfo("success", payloadForLog, user_id, coinsAwarded, null);
+
+    await sendPushNotification(user_id, "Coins Credited! 💸", `You earned +${coinsAwarded} coins from PubScale Surveys!`).catch(err => {
+      console.error("[FCM PubScale Netlify] Failed to send push notification:", err);
+    });
 
     return {
       statusCode: 200,
