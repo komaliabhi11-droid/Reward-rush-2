@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, Settings, Sparkles, Coins, X, Loader2, AlertCircle, ExternalLink, RefreshCw, Search, Filter, ArrowDownUp, Clock, ThumbsUp, ChevronLeft, Building2, Landmark, Play, LayoutGrid, Gamepad2 } from 'lucide-react';
 import { UserState } from '../types';
+import { auth } from '../lib/firebase';
 
 interface DashboardProps {
   user: UserState;
@@ -227,8 +228,15 @@ export default function Dashboard({
     setIframeKey(prev => prev + 1);
   };
 
-  const appId = (import.meta as any).env.VITE_PUBSCALE_APP_ID || '20973478';
-  const targetUrl = `https://wow.pubscale.com?app_id=${appId}&user_id=${uid || ''}`;
+  const appId = '20973478';
+  const resolvedUid = uid || auth.currentUser?.uid || '';
+  const targetUrl = `https://wow.pubscale.com?app_id=${appId}&user_id=${resolvedUid}`;
+
+  useEffect(() => {
+    if (showPubScaleModal) {
+      console.log(`[PubScale URL Debug] Opening Offerwall. Target URL: ${targetUrl}`);
+    }
+  }, [showPubScaleModal, targetUrl]);
 
   return (
     <div className="h-full min-h-[500px] flex flex-col items-center justify-start text-center relative px-4 select-none pb-20">

@@ -33,7 +33,31 @@ if (getApps().length === 0) {
 }
 const db = getFirestore();
 
+// Helper to update the debug document
+async function updateDebugInfo(status: string, payload: any, userId: string | null, rewardAmount: number | null, errorMessage: string | null) {
+  try {
+    await db.collection("system").doc("pubscale-debug").set({
+      status,
+      lastCallbackReceived: payload,
+      lastUserId: userId,
+      lastRewardAmount: rewardAmount,
+      lastErrorMessage: errorMessage,
+      updatedAt: new Date().toISOString()
+    });
+    console.log(`[PubScale Debug Updated] status=${status}, userId=${userId}, rewardAmount=${rewardAmount}`);
+  } catch (err) {
+    console.error("Failed to update pubscale-debug Firestore doc:", err);
+  }
+}
+
 export const handler = async (event: any, context: any) => {
+  const payloadForLog: any = {};
+  let user_id: string | null = null;
+  let value: string | null = null;
+  let token: string | null = null;
+  let signature: string | null = null;
+  let coinsAwarded: number | null = null;
+
   try {
     // Parse parameters from query parameters or body
     let bodyParams = {};
@@ -49,8 +73,8 @@ export const handler = async (event: any, context: any) => {
         // Fallback for URL encoded body parameters if any
         const searchParams = new URLSearchParams(event.body);
         const urlParams: any = {};
-        for (const [key, value] of searchParams.entries()) {
-          urlParams[key] = value;
+        for (const [k, v] of searchParams.entries()) {
+          urlParams[k] = v;
         }
         bodyParams = urlParams;
       }
@@ -61,44 +85,64 @@ export const handler = async (event: any, context: any) => {
       ...bodyParams
     };
 
-    const user_id = params.user_id;
-    const value = params.value;
-    const token = params.token;
-    const signature = params.signature;
+    user_id = params.user_id || null;
+    value = params.value || null;
+    token = params.token || null;
+    signature = params.signature || null;
 
-    console.log(`[Netlify PubScale Postback] Received user_id=${user_id}, value=${value}, token=${token}, signature=${signature}`);
+    // Redact sensitive secrets from logged payload but keep basic fields
+    Object.keys(params).forEach(k => {
+      if (k.toLowerCase().includes("secret") || k.toLowerCase().includes("key")) {
+        payloadForLog[k] = "[REDACTED]";
+      } else {
+        payloadForLog[k] = params[k];
+      }
+    });
 
-    // 1. Validate inputs
+    // 1. Log: Callback received
+    console.log("[PubScale Postback] Callback received. Payload:", JSON.stringify(payloadForLog));
+
+    // 2. Log: User ID, Reward value, token
+    console.log(`[PubScale Postback] Extracted parameters: user_id=${user_id}, value=${value}, token=${token}, signature=${signature}`);
+
+    // Validate inputs
     if (!user_id || !value || !token) {
-      console.warn("[Netlify PubScale Postback] Missing required fields: user_id, value, or token");
+      const errMsg = "Missing required fields: user_id, value, or token";
+      console.warn(`[PubScale Postback] ${errMsg}`);
+      await updateDebugInfo("error", payloadForLog, user_id, null, errMsg);
       return {
         statusCode: 400,
-        body: "Missing required parameters"
+        body: errMsg
       };
     }
 
-    const coinsAwarded = Math.trunc(parseFloat(value));
+    coinsAwarded = Math.trunc(parseFloat(value));
     if (isNaN(coinsAwarded) || coinsAwarded <= 0) {
-      console.warn(`[Netlify PubScale Postback] Invalid value parameter: ${value}`);
+      const errMsg = `Invalid value parameter: ${value}`;
+      console.warn(`[PubScale Postback] ${errMsg}`);
+      await updateDebugInfo("error", payloadForLog, user_id, null, errMsg);
       return {
         statusCode: 400,
-        body: "Invalid reward value"
+        body: errMsg
       };
     }
 
-    // 2. Validate signature if enabled
+    // 3. Verify signature if enabled
     const pubscaleSecretKey = process.env.PUBSCALE_SECRET_KEY || "YOUR_PUBSCALE_SECRET_KEY";
     const isSecureHashEnabled = process.env.PUBSCALE_SECURITY_HASH_ENABLED === "true";
     const isPlaceholder = !pubscaleSecretKey || pubscaleSecretKey === "YOUR_PUBSCALE_SECRET_KEY" || pubscaleSecretKey.startsWith("YOUR_");
 
     const shouldVerify = isSecureHashEnabled && !isPlaceholder;
+    let sigResult = "";
 
     if (shouldVerify) {
       if (!signature) {
-        console.warn("[Netlify PubScale Postback] Missing signature for verification");
+        const errMsg = "Missing signature for verification";
+        console.warn(`[PubScale Postback] ${errMsg}`);
+        await updateDebugInfo("error", payloadForLog, user_id, coinsAwarded, errMsg);
         return {
           statusCode: 400,
-          body: "Missing signature"
+          body: errMsg
         };
       }
       // Formula: md5(secret_key.user_id.int(value).token)
@@ -106,29 +150,52 @@ export const handler = async (event: any, context: any) => {
       const expectedHash = crypto.createHash("md5").update(input).digest("hex");
 
       if (signature.toLowerCase() !== expectedHash.toLowerCase()) {
-        console.warn(`[Netlify PubScale Postback] Invalid signature. Received: ${signature.toLowerCase()}, Expected: ${expectedHash.toLowerCase()}`);
+        const errMsg = `Invalid signature. Received: ${signature.toLowerCase()}, Expected: ${expectedHash.toLowerCase()}`;
+        console.warn(`[PubScale Postback] ${errMsg}`);
+        sigResult = "failed";
+        // 4. Log: Signature verification result
+        console.log(`[PubScale Postback] Signature verification result: ${sigResult}`);
+        await updateDebugInfo("error", payloadForLog, user_id, coinsAwarded, errMsg);
         return {
           statusCode: 403,
           body: "Invalid signature hash"
         };
+      } else {
+        sigResult = "passed";
+        console.log(`[PubScale Postback] Signature verification result: ${sigResult}`);
       }
     } else {
-      console.log(`[Netlify PubScale Postback] Signature verification skipped (enabled=${isSecureHashEnabled}, isPlaceholder=${isPlaceholder})`);
+      sigResult = "skipped";
+      console.log(`[PubScale Postback] Signature verification result: ${sigResult} (isSecureHashEnabled=${isSecureHashEnabled}, isPlaceholder=${isPlaceholder})`);
     }
 
-    // 3. Process reward/transaction atomically in Firestore using transactions
+    // 4. Process reward/transaction atomically in Firestore using transactions
     const userRef = db.collection("users").doc(user_id);
     const offerRef = db.collection("offerHistory").doc("pubscale-" + token);
+
+    let duplicateDetected = false;
+    let userFound = false;
 
     await db.runTransaction(async (transaction) => {
       const userSnap = await transaction.get(userRef);
       const offerSnap = await transaction.get(offerRef);
 
-      const userExists = userSnap.exists;
+      userFound = userSnap.exists;
       const offerExists = offerSnap.exists;
 
+      // Log: User found/not found
+      if (!userFound) {
+        console.warn(`[PubScale Postback] User found/not found: NOT FOUND (UID=${user_id})`);
+        // We log the reason instead of failing silently.
+        throw new Error(`User not found in Firestore. Cannot credit coins.`);
+      } else {
+        console.log(`[PubScale Postback] User found/not found: FOUND (UID=${user_id})`);
+      }
+
       if (offerExists) {
-        console.log(`[Netlify PubScale Postback] Transaction ${token} has already been processed. Skipping duplicate reward.`);
+        duplicateDetected = true;
+        // Log: Duplicate transaction detected
+        console.log(`[PubScale Postback] Duplicate transaction detected: Token ${token} has already been processed.`);
         return;
       }
 
@@ -137,7 +204,7 @@ export const handler = async (event: any, context: any) => {
         offerId: "pubscale-survey",
         transactionId: token,
         amountLocal: value,
-        amountUSD: (parseFloat(value) / 8300).toFixed(6), // 8300 coins = $1 USD
+        amountUSD: (parseFloat(value!) / 83).toFixed(6), // 83 coins = $1 USD
         coinsAwarded: coinsAwarded,
         status: "completed",
         completedAt: new Date().toISOString()
@@ -152,51 +219,52 @@ export const handler = async (event: any, context: any) => {
         status: "completed"
       };
 
-      if (userExists) {
-        const userData = userSnap.data() || {};
-        const currentCoins = userData.coins || 0;
-        const currentTotalEarned = userData.totalEarned || 0;
-        const currentCompletedOffers = userData.completedOffers || 0;
+      const userData = userSnap.data() || {};
+      const currentCoins = userData.coins || 0;
+      const currentTotalEarned = userData.totalEarned || 0;
+      const currentCompletedOffers = userData.completedOffers || 0;
 
-        transaction.update(userRef, {
-          coins: currentCoins + coinsAwarded,
-          totalEarned: currentTotalEarned + coinsAwarded,
-          completedOffers: currentCompletedOffers + 1,
-          lastReward: coinsAwarded,
-          history: FieldValue.arrayUnion(ledgerItem)
-        });
-      } else {
-        transaction.set(userRef, {
-          uid: user_id,
-          fullName: "Survey Explorer",
-          email: "pubscale-user-" + user_id + "@rewardrush.com",
-          profilePhoto: "user-0",
-          coins: coinsAwarded,
-          totalEarned: coinsAwarded,
-          totalWithdrawn: 0,
-          pendingWithdraw: 0,
-          completedOffers: 1,
-          lastReward: coinsAwarded,
-          joinedAt: new Date().toISOString(),
-          isAdmin: false,
-          isBanned: false,
-          history: [ledgerItem]
-        });
-      }
+      transaction.update(userRef, {
+        coins: currentCoins + coinsAwarded,
+        totalEarned: currentTotalEarned + coinsAwarded,
+        completedOffers: currentCompletedOffers + 1,
+        lastReward: coinsAwarded,
+        history: FieldValue.arrayUnion(ledgerItem)
+      });
 
       transaction.set(offerRef, offerData);
-      console.log(`[Netlify PubScale Postback] Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
     });
+
+    if (duplicateDetected) {
+      await updateDebugInfo("duplicate", payloadForLog, user_id, coinsAwarded, "Duplicate transaction ignored");
+      return {
+        statusCode: 200,
+        body: "Duplicate transaction ignored"
+      };
+    }
+
+    // Log: Coins credited
+    console.log(`[PubScale Postback] Coins credited: Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
+    await updateDebugInfo("success", payloadForLog, user_id, coinsAwarded, null);
 
     return {
       statusCode: 200,
       body: "OK"
     };
+
   } catch (err: any) {
-    console.error("[Netlify PubScale Postback Error]:", err);
+    // Log: Any errors
+    console.error("[PubScale Postback Error]:", err);
+    
+    // Check if it's the "User not found" error we threw
+    const isUserNotFoundError = err.message && err.message.includes("User not found");
+    const statusType = isUserNotFoundError ? "user_not_found" : "error";
+    
+    await updateDebugInfo(statusType, payloadForLog, user_id, coinsAwarded, err.message || String(err));
+    
     return {
-      statusCode: 500,
-      body: "Internal server error"
+      statusCode: isUserNotFoundError ? 404 : 500,
+      body: err.message || "Internal server error"
     };
   }
 };

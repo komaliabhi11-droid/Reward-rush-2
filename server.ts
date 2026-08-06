@@ -1,15 +1,49 @@
 import express from "express";
 import path from "path";
 import crypto from "crypto";
-import { getApps, initializeApp } from "firebase-admin/app";
+import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createServer as createViteServer } from "vite";
 
 // Initialize Firebase Admin securely for backend operations
 if (getApps().length === 0) {
-  initializeApp({
-    projectId: "mr-earning-a806d"
-  });
+  const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (serviceAccountKey) {
+    try {
+      const credentials = JSON.parse(serviceAccountKey);
+      initializeApp({
+        credential: cert(credentials),
+        projectId: credentials.project_id || "mr-earning-a806d"
+      });
+      console.log("[Firebase Admin] Initialized successfully with FIREBASE_SERVICE_ACCOUNT credentials.");
+    } catch (parseErr) {
+      console.error("[Firebase Admin] Failed to parse FIREBASE_SERVICE_ACCOUNT env var. Falling back.", parseErr);
+      initializeApp({
+        projectId: "mr-earning-a806d"
+      });
+    }
+  } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    try {
+      initializeApp({
+        credential: cert({
+          projectId: process.env.FIREBASE_PROJECT_ID || "mr-earning-a806d",
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        })
+      });
+      console.log("[Firebase Admin] Initialized successfully with private key environment variables.");
+    } catch (err) {
+      console.error("[Firebase Admin] Failed to initialize with private key environment variables. Falling back.", err);
+      initializeApp({
+        projectId: "mr-earning-a806d"
+      });
+    }
+  } else {
+    initializeApp({
+      projectId: "mr-earning-a806d"
+    });
+    console.log("[Firebase Admin] Initialized with default credentials for project mr-earning-a806d.");
+  }
 }
 const db = getFirestore();
 
@@ -233,66 +267,137 @@ async function startServer() {
     }
   });
 
-  // Secure PubScale Postback Endpoint
-  app.all("/api/pubscale-postback", async (req, res) => {
+  // Helper to update the debug document
+  async function updateDebugInfo(status: string, payload: any, userId: string | null, rewardAmount: number | null, errorMessage: string | null) {
+    try {
+      await db.collection("system").doc("pubscale-debug").set({
+        status,
+        lastCallbackReceived: payload,
+        lastUserId: userId,
+        lastRewardAmount: rewardAmount,
+        lastErrorMessage: errorMessage,
+        updatedAt: new Date().toISOString()
+      });
+      console.log(`[PubScale Debug Updated] status=${status}, userId=${userId}, rewardAmount=${rewardAmount}`);
+    } catch (err) {
+      console.error("Failed to update pubscale-debug Firestore doc:", err);
+    }
+  }
+
+  // Unified Secure PubScale Postback Endpoint (supporting both Express and Netlify path formats)
+  app.all(["/api/pubscale-postback", "/.netlify/functions/pubscale-postback"], async (req, res) => {
+    const payloadForLog: any = {};
+    let user_id: string | null = null;
+    let value: string | null = null;
+    let token: string | null = null;
+    let signature: string | null = null;
+    let coinsAwarded: number | null = null;
+
     try {
       // PubScale parameters can come in query (GET) or body (POST)
-      const user_id = (req.query.user_id || req.body.user_id) as string;
-      const value = (req.query.value || req.body.value) as string;
-      const token = (req.query.token || req.body.token) as string;
-      const signature = (req.query.signature || req.body.signature) as string;
+      const params = {
+        ...req.query,
+        ...req.body
+      };
 
-      console.log(`[PubScale Postback] Received user_id=${user_id}, value=${value}, token=${token}, signature=${signature}`);
+      user_id = (params.user_id) as string || null;
+      value = (params.value) as string || null;
+      token = (params.token) as string || null;
+      signature = (params.signature) as string || null;
 
-      // 1. Validate inputs
+      // Redact sensitive secrets from logged payload but keep basic fields
+      Object.keys(params).forEach(k => {
+        if (k.toLowerCase().includes("secret") || k.toLowerCase().includes("key")) {
+          payloadForLog[k] = "[REDACTED]";
+        } else {
+          payloadForLog[k] = params[k];
+        }
+      });
+
+      // 1. Log: Callback received
+      console.log("[PubScale Postback] Callback received. Payload:", JSON.stringify(payloadForLog));
+
+      // 2. Log: User ID, Reward value, token
+      console.log(`[PubScale Postback] Extracted parameters: user_id=${user_id}, value=${value}, token=${token}, signature=${signature}`);
+
+      // Validate inputs
       if (!user_id || !value || !token) {
-        console.warn("[PubScale Postback] Missing required fields: user_id, value, or token");
-        return res.status(400).send("Missing required parameters");
+        const errMsg = "Missing required fields: user_id, value, or token";
+        console.warn(`[PubScale Postback] ${errMsg}`);
+        await updateDebugInfo("error", payloadForLog, user_id, null, errMsg);
+        return res.status(400).send(errMsg);
       }
 
-      const coinsAwarded = Math.trunc(parseFloat(value));
+      coinsAwarded = Math.trunc(parseFloat(value));
       if (isNaN(coinsAwarded) || coinsAwarded <= 0) {
-        console.warn(`[PubScale Postback] Invalid value parameter: ${value}`);
-        return res.status(400).send("Invalid reward value");
+        const errMsg = `Invalid value parameter: ${value}`;
+        console.warn(`[PubScale Postback] ${errMsg}`);
+        await updateDebugInfo("error", payloadForLog, user_id, null, errMsg);
+        return res.status(400).send(errMsg);
       }
 
-      // 2. Validate signature if enabled
+      // 3. Verify signature if enabled
       const pubscaleSecretKey = process.env.PUBSCALE_SECRET_KEY || "YOUR_PUBSCALE_SECRET_KEY";
       const isSecureHashEnabled = process.env.PUBSCALE_SECURITY_HASH_ENABLED === "true";
       const isPlaceholder = !pubscaleSecretKey || pubscaleSecretKey === "YOUR_PUBSCALE_SECRET_KEY" || pubscaleSecretKey.startsWith("YOUR_");
 
       const shouldVerify = isSecureHashEnabled && !isPlaceholder;
+      let sigResult = "";
 
       if (shouldVerify) {
         if (!signature) {
-          console.warn("[PubScale Postback] Missing signature for verification");
-          return res.status(400).send("Missing signature");
+          const errMsg = "Missing signature for verification";
+          console.warn(`[PubScale Postback] ${errMsg}`);
+          await updateDebugInfo("error", payloadForLog, user_id, coinsAwarded, errMsg);
+          return res.status(400).send(errMsg);
         }
         // Formula: md5(secret_key.user_id.int(value).token)
         const input = `${pubscaleSecretKey}.${user_id}.${coinsAwarded}.${token}`;
         const expectedHash = crypto.createHash("md5").update(input).digest("hex");
 
         if (signature.toLowerCase() !== expectedHash.toLowerCase()) {
-          console.warn(`[PubScale Postback] Invalid signature. Received: ${signature.toLowerCase()}, Expected: ${expectedHash.toLowerCase()}`);
+          const errMsg = `Invalid signature. Received: ${signature.toLowerCase()}, Expected: ${expectedHash.toLowerCase()}`;
+          console.warn(`[PubScale Postback] ${errMsg}`);
+          sigResult = "failed";
+          // 4. Log: Signature verification result
+          console.log(`[PubScale Postback] Signature verification result: ${sigResult}`);
+          await updateDebugInfo("error", payloadForLog, user_id, coinsAwarded, errMsg);
           return res.status(403).send("Invalid signature hash");
+        } else {
+          sigResult = "passed";
+          console.log(`[PubScale Postback] Signature verification result: ${sigResult}`);
         }
       } else {
-        console.log(`[PubScale Postback] Signature verification skipped (enabled=${isSecureHashEnabled}, isPlaceholder=${isPlaceholder})`);
+        sigResult = "skipped";
+        console.log(`[PubScale Postback] Signature verification result: ${sigResult} (isSecureHashEnabled=${isSecureHashEnabled}, isPlaceholder=${isPlaceholder})`);
       }
 
-      // 3. Process reward/transaction atomically in Firestore using transactions
+      // 4. Process reward/transaction atomically in Firestore using transactions
       const userRef = db.collection("users").doc(user_id);
       const offerRef = db.collection("offerHistory").doc("pubscale-" + token);
+
+      let duplicateDetected = false;
+      let userFound = false;
 
       await db.runTransaction(async (transaction) => {
         const userSnap = await transaction.get(userRef);
         const offerSnap = await transaction.get(offerRef);
 
-        const userExists = userSnap.exists;
+        userFound = userSnap.exists;
         const offerExists = offerSnap.exists;
 
+        // Log: User found/not found
+        if (!userFound) {
+          console.warn(`[PubScale Postback] User found/not found: NOT FOUND (UID=${user_id})`);
+          throw new Error(`User not found in Firestore. Cannot credit coins.`);
+        } else {
+          console.log(`[PubScale Postback] User found/not found: FOUND (UID=${user_id})`);
+        }
+
         if (offerExists) {
-          console.log(`[PubScale Postback] Transaction ${token} has already been processed. Skipping duplicate reward.`);
+          duplicateDetected = true;
+          // Log: Duplicate transaction detected
+          console.log(`[PubScale Postback] Duplicate transaction detected: Token ${token} has already been processed.`);
           return;
         }
 
@@ -301,7 +406,7 @@ async function startServer() {
           offerId: "pubscale-survey",
           transactionId: token,
           amountLocal: value,
-          amountUSD: (parseFloat(value) / 83).toFixed(6), // 83 coins = $1 USD
+          amountUSD: (parseFloat(value!) / 83).toFixed(6), // 83 coins = $1 USD
           coinsAwarded: coinsAwarded,
           status: "completed",
           completedAt: new Date().toISOString()
@@ -316,47 +421,77 @@ async function startServer() {
           status: "completed"
         };
 
-        if (userExists) {
-          const userData = userSnap.data() || {};
-          const currentCoins = userData.coins || 0;
-          const currentTotalEarned = userData.totalEarned || 0;
-          const currentCompletedOffers = userData.completedOffers || 0;
+        const userData = userSnap.data() || {};
+        const currentCoins = userData.coins || 0;
+        const currentTotalEarned = userData.totalEarned || 0;
+        const currentCompletedOffers = userData.completedOffers || 0;
 
-          transaction.update(userRef, {
-            coins: currentCoins + coinsAwarded,
-            totalEarned: currentTotalEarned + coinsAwarded,
-            completedOffers: currentCompletedOffers + 1,
-            lastReward: coinsAwarded,
-            history: FieldValue.arrayUnion(ledgerItem)
-          });
-        } else {
-          transaction.set(userRef, {
-            uid: user_id,
-            fullName: "Survey Explorer",
-            email: "pubscale-user-" + user_id + "@rewardrush.com",
-            profilePhoto: "user-0",
-            coins: coinsAwarded,
-            totalEarned: coinsAwarded,
-            totalWithdrawn: 0,
-            pendingWithdraw: 0,
-            completedOffers: 1,
-            lastReward: coinsAwarded,
-            joinedAt: new Date().toISOString(),
-            isAdmin: false,
-            isBanned: false,
-            history: [ledgerItem]
-          });
-        }
+        transaction.update(userRef, {
+          coins: currentCoins + coinsAwarded,
+          totalEarned: currentTotalEarned + coinsAwarded,
+          completedOffers: currentCompletedOffers + 1,
+          lastReward: coinsAwarded,
+          history: FieldValue.arrayUnion(ledgerItem)
+        });
 
         transaction.set(offerRef, offerData);
-        console.log(`[PubScale Postback DBG] Original PubScale value: ${value}, Final credited coin amount: ${coinsAwarded}`);
-        console.log(`[PubScale Postback] Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
       });
+
+      if (duplicateDetected) {
+        await updateDebugInfo("duplicate", payloadForLog, user_id, coinsAwarded, "Duplicate transaction ignored");
+        return res.status(200).send("Duplicate transaction ignored");
+      }
+
+      // Log: Coins credited
+      console.log(`[PubScale Postback] Coins credited: Successfully credited user ${user_id} with ${coinsAwarded} coins.`);
+      await updateDebugInfo("success", payloadForLog, user_id, coinsAwarded, null);
 
       return res.status(200).send("OK");
     } catch (err: any) {
+      // Log: Any errors
       console.error("[PubScale Postback Error]:", err);
-      return res.status(500).send("Internal server error");
+      
+      const isUserNotFoundError = err.message && err.message.includes("User not found");
+      const statusType = isUserNotFoundError ? "user_not_found" : "error";
+      
+      await updateDebugInfo(statusType, payloadForLog, user_id, coinsAwarded, err.message || String(err));
+      
+      return res.status(isUserNotFoundError ? 404 : 500).send(err.message || "Internal server error");
+    }
+  });
+
+  // PubScale Debug Endpoint (supporting both Express and Netlify path formats)
+  app.all(["/api/pubscale-debug", "/.netlify/functions/pubscale-debug"], async (req, res) => {
+    try {
+      const debugDoc = await db.collection("system").doc("pubscale-debug").get();
+      
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+
+      if (!debugDoc.exists) {
+        return res.json({
+          "Callback status": "idle",
+          "Last callback received": null,
+          "Last processed user ID": null,
+          "Last reward amount": null,
+          "Last error message": null
+        });
+      }
+
+      const data = debugDoc.data() || {};
+      return res.json({
+        "Callback status": data.status || "idle",
+        "Last callback received": data.lastCallbackReceived || null,
+        "Last processed user ID": data.lastUserId || null,
+        "Last reward amount": data.lastRewardAmount !== undefined ? data.lastRewardAmount : null,
+        "Last error message": data.lastErrorMessage || null
+      });
+    } catch (err: any) {
+      console.error("[PubScale Debug Route Error]:", err);
+      return res.status(500).json({
+        error: "Internal server error",
+        message: err.message
+      });
     }
   });
 
